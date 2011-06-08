@@ -1,0 +1,46 @@
+June 7 2011
+
+Merged snomadr (code for NOMAD is LGPL) into crs so now no
+dependencies whatsoever (no gsl, no mgcv, no nomad) so it is
+standalone. At this stage could upload to CRAN if I wished and sooner
+rather than later I need to do so.
+
+June 5 2011
+
+Zhenghua has added a number of useful features.
+
+One is odd - fit.z... I think include and lambda cover these. Will
+meet tomorrow morning to discuss.
+
+Also, need R_CheckUserInterrupt() to be called by snomadr as currently
+cannot terminate...
+
+Also, global scope variables need to be modified...
+
+May 17, 2011, Toulouse
+
+Zhenghua makes the big play. He has written snomadr, a standalone R
+implmentation of NOMAD. Then he has written R functions that currently
+smoke!
+
+Dec 13 2010
+
+Issue 1) I had been modifying endpoints by appending to knot
+vector. This won't work. My previous `trimming' approach was in fact
+better so perhaps I ought to revert to that.
+
+Now, bs() in spline extends the endpoints (somehow) but throws a
+warning, however, it does this without appending the knot vector. The
+upshot is that the dimension is unchanged which is desirable - this is
+all via the predict() function.
+
+Issue 2) With quantile knots you can get repeated breakpoints when
+data as point mass (rounded etc.). I had been reducing the number of
+breakpoints dynamically when this happens, but this can throw things
+off.
+
+The bs() function handles this more gracefully.
+
+I can envision hacks such as appending an epsilon to each identical
+value and augmenting, but this is indeed a hack.
+

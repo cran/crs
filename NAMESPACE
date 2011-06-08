@@ -1,0 +1,30 @@
+useDynLib(crs)
+useDynLib(crs, snomadRSolve)
+useDynLib(crs, smultinomadRSolve)
+import(stats)
+export(crs,
+       crsiv,
+       frscv,
+			 frscvNOMAD, 
+       gsl.bs,
+       krscv,
+			 krscvNOMAD,
+       snomadr,
+       tensor.prod.model.matrix,
+       uniquecombs)
+
+S3method(crs, formula)
+S3method(crs, default)
+
+S3method(print, crscv)
+S3method(summary, crscv)
+
+S3method(print, crs)
+S3method(summary, crs)
+S3method(predict, crs)
+S3method(plot, crs)
+
+S3method(gsl.bs, default)
+S3method(predict, gsl.bs)
+
+S3method(print, snomadr)
