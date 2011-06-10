@@ -1,4 +1,15 @@
-Changes from Version 0.14.6 to 0.14.7 [XXX]
+Changes from Version 0.14.7 to 0.14.8 [10-Jun-2011]
+
+* crsiv now returns a crs model object that supports residuals,
+  fitted, predict and other generic functions. Note that this approach
+  is based on first computing the model via regularization and then
+  feeding a transformed response to a crs model object. You can test
+  how close the two approaches are to one another by comparing
+  model$phihat with fitted(model) via
+
+  all.equal(as.numeric(fitted(model)),as.numeric(model$phihat))
+
+Changes from Version 0.14.6 to 0.14.7 [09-Jun-2011]
 
 * Checking for non-auto basis corrected, modify crsiv to use auto
   basis.

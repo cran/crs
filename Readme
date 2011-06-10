@@ -1,3 +1,9 @@
+June 9 2011
+
+Brain flash about using the lambda approach and spitting a crs model
+with additional components in crsiv... guess I might be able to use
+names of variables taken from the data frames rather than x1, x2 etc.
+
 June 7 2011
 
 Merged snomadr (code for NOMAD is LGPL) into crs so now no

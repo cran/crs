@@ -9,9 +9,9 @@ Nonparametric Instrumental Regression
 regression function \eqn{\varphi}{phi} defined by conditional moment
 restrictions stemming from a structural econometric model: \eqn{E [Y -
 \varphi (Z,X) | W ] = 0}{E [Y - phi (Z,X) | W ] = 0}, and involving
-endogenous variables \eqn{Y} and \eqn{Z} and exogenous variables
-\eqn{X} and instruments \eqn{W}. The function \eqn{\varphi}{phi} is the
-solution of an ill-posed inverse problem.
+endogenous variables \eqn{Y} and \eqn{Z}, exogenous variables \eqn{X},
+and instruments \eqn{W}. The function \eqn{\varphi}{phi} is the solution
+of an ill-posed inverse problem.
 
 When \code{method="Tikhonov"}, \code{crsiv} uses the approach of
 Darolles, Fan, Florens and Renault (forthcoming) modified for regression
@@ -37,6 +37,7 @@ crsiv(y,
       constant = 0.5,
       method = c("Landweber-Fridman","Tikhonov"),
       opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10","DISPLAY_DEGREE"=0),
+      deriv=0,
       ...)
 }
 
@@ -114,6 +115,14 @@ crsiv(y,
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
     further details).
   }
+  \item{deriv}{ an integer \code{l} (default \code{deriv=0}) specifying
+  whether to compute the univariate \code{l}th partial derivative for
+  each continuous predictor (and difference in levels for each
+  categorical predictor) or not and if so what order. Note that if
+  \code{deriv} is higher than the spline degree of the associated
+  continuous predictor then the derivative will be zero and a warning
+  issued to this effect
+  }
 \item{...}{
   additional arguments supplied to \code{\link{crs}}.
 }
@@ -144,10 +153,24 @@ crsiv(y,
   starts rising.
 }
 \value{
-  \code{crsiv} returns a list with components \code{phihat} and either
-  \code{alpha} when \code{method="Tikhonov"} or \code{num.iterations}
-   and \code{norm.stop} when \code{method="Landweber-Fridman"}.
+  
+  \code{crsiv} returns a \code{\link{crs}} object.  The generic functions
+    \code{\link{fitted}} and \code{\link{residuals}} extract (or
+    generate) estimated values and residuals. Furthermore, the functions
+    \code{\link{summary}}, \code{\link{predict}}, and \code{\link{plot}}
+    (options \code{mean=FALSE}, \code{deriv=FALSE}, \code{ci=FALSE},
+    \code{plot.behavior=c("plot","plot-data","data")}) support objects
+    of this type.
+    
+    See \code{\link{crs}} for details on the return object components.
+
+    In addition to the standard \code{\link{crs}} components,
+    \code{crsiv} returns components \code{phihat} and either
+    \code{alpha} when \code{method="Tikhonov"} or \code{num.iterations}
+    and \code{norm.stop} when \code{method="Landweber-Fridman"}.
+    
 }
+  
 \references{
   
   Carrasco, M. and J.P. Florens and E. Renault (2007), \dQuote{Linear
@@ -195,6 +218,11 @@ This function should be considered to be in `beta test' status until further not
 
 set.seed(42)
 n <- 1500
+nmulti <- 10
+
+## Turn off display I/O for crs() NOMAD search...
+
+opts <- list("DISPLAY_DEGREE"=0)
 
 ## The DGP is as follows:
 
@@ -234,19 +262,20 @@ y2 <- fun2(z) + u
 y <- y1
 phi <- fun1
 
-## Sort on z (for plotting)
+## Create an evaluation dataset sorting on z (for plotting)
 
-ivdata <- data.frame(y,z,w)
-ivdata <- ivdata[order(ivdata$z),]
-rm(y,z,w)
-attach(ivdata)
+evaldata <- data.frame(y,z,w)
+evaldata <- evaldata[order(evaldata$z),]
 
-model.iv <- crsiv(y=y,z=z,w=w,nmulti=5)
-phihat.iv <- model.iv$phihat
+## Compute the non-IV regression spline estimator of E(y|z)
 
-## Now the non-iv regression spline estimator of E(y|z)
+model.noniv <- crs(y~z,nmulti=nmulti,opts=opts)
+mean.noniv <- predict(model.noniv,newdata=evaldata)
 
-crs.mean <- fitted(crs(y~z,nmulti=5))
+## Compute the IV-regression spline estimator of phi(z)
+
+model.iv <- crsiv(y=y,z=z,w=w,nmulti=nmulti)
+phi.iv <- predict(model.iv,newdata=evaldata)
 
 ## For the plots, restrict focal attention to the bulk of the data
 ## (i.e. for the plotting area trim out 1/4 of one percent from each
@@ -265,11 +294,11 @@ curve(phi,min(z),max(z),
 
 points(z,y,type="p",cex=.25,col="grey")
 
-lines(z,z^2 -0.325*z,lwd=1,lty=1)
+lines(evaldata$z,evaldata$z^2 -0.325*evaldata$z,lwd=1,lty=1)
 
-lines(z,phihat.iv,col="blue",lwd=2,lty=2)
+lines(evaldata$z,phi.iv,col="blue",lwd=2,lty=2)
 
-lines(z,crs.mean,col="red",lwd=2,lty=4)
+lines(evaldata$z,mean.noniv,col="red",lwd=2,lty=4)
 
 legend(quantile(z,trim),quantile(y,1-trim),
        c(expression(paste(varphi(z),", E(y|z)",sep="")),
