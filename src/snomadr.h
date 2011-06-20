@@ -38,6 +38,7 @@
 #include <iomanip> 
 #include <iostream> 
 #include <fstream> 
+#include <sstream>
 #include <stdio.h> 
 #include <string.h> 
 #include <string> 
@@ -51,7 +52,6 @@
 
 #include <R.h>
 #include <Rdefines.h>
-#include <Rinterface.h>
 #include <R_ext/Utils.h>
 
 typedef union UNION_VARIABLE

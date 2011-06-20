@@ -1,7 +1,7 @@
 \name{crs-package}
 \alias{crs-package}
 \docType{package}
-\title{Categorical Regression Splines}
+\title{Nonparametric Regression Splines with Continuous and Categorical Predictors}
 \description{
 
 	This package provides a method for nonparametric regression that
@@ -9,9 +9,9 @@
 	continuous predictors (\sQuote{\code{x}}) with the (local) power of
 	kernel methods for categorical predictors (\sQuote{\code{z}}). The
 	user also has the option of instead using indicator bases for the
-	categorical predictors (default). When the predictors contain both
-	continuous and categorical (discrete) data types, both approaches
-	offer more efficient estimation than the traditional sample-splitting
+	categorical predictors. When the predictors contain both continuous
+	and categorical (discrete) data types, both approaches offer more
+	efficient estimation than the traditional sample-splitting
 	(i.e. \sQuote{frequency}) approach where the data is first broken into
 	subsets governed by the categorical \code{z}.
 
@@ -21,6 +21,9 @@
   For a listing of all routines in the \pkg{crs} package type:
   \sQuote{\code{library(help="crs")}}.
 
+  For a listing of all demos in the \pkg{crs} package type:
+  \sQuote{\code{demo(package="crs")}}.
+
   For a \sQuote{\code{\link{vignette}}} that presents an overview of the
   \pkg{crs} package type: \sQuote{\code{vignette("crs")}}.
   
@@ -29,14 +32,14 @@
 \details{
 
   For the continuous predictors the regression spline model employs the
-  B-spline basis matrix and for interactions may append the tensor
-  product B-spline basis matrix for a multivariate polynomial spline via
-  the B-spline routines in the GNU Scientific Library and the
-  \code{\link{tensor.prod.model.matrix}} function in the \pkg{mgcv}
-  package. The B-spline function is the maximally differentiable
-  interpolative basis function (B-spline stands for
-  \dQuote{basis}-spline).
-  
+  B-spline basis matrix using the B-spline routines in the GNU
+  Scientific Library (\url{http://www.gnu.org/software/gsl/}).
+
+   The \code{\link{tensor.prod.model.matrix}} function is used to
+  construct multivariate tensor spline bases when \code{basis="tensor"}
+  and uses additive B-splines otherwise (i.e. when
+  \code{basis="additive"}).
+
   For the discrete predictors the product kernel function is of the
   `Li-Racine' type (see Li and Racine (2007) for details) which is
   formed by constructing products of one of the following univariate

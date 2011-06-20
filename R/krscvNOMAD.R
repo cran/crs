@@ -23,8 +23,9 @@ krscvNOMAD <- function(xz,
 											 cv.func=c("cv.ls","cv.gcv","cv.aic"),
 											 degree=degree,
 											 segments=segments, 
-											 lambda=lambda, 
-											 opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10"),
+											 lambda=lambda,
+                       random.seed=42,
+											 opts=list(),
 											 nmulti=0) {
 
 		complexity <- match.arg(complexity)
@@ -205,6 +206,17 @@ krscvNOMAD <- function(xz,
 				xdegree <- degree
 				xlambda <- lambda
 
+        ## Save seed prior to setting
+
+        if(exists(".Random.seed", .GlobalEnv)) {
+          save.seed <- get(".Random.seed", .GlobalEnv)
+          exists.seed = TRUE
+        } else {
+          exists.seed = FALSE
+        }
+
+        set.seed(random.seed)
+
 				if(is.null(xdegree)) xdegree <- sample(degree.min:degree.max, num.x, replace=T)
 				if(is.null(xsegments)) xsegments <- sample(segments.min:segments.max, num.x, replace=T)
 				if(is.null(xlambda)) xlambda <- runif(num.z)
@@ -248,12 +260,17 @@ krscvNOMAD <- function(xz,
 													lb=lb,
 													ub=ub,
 													nmulti=as.integer(nmulti),
+													random.seed=random.seed, 
 													opts=opts,
 													print.output=print.output, 
 													params=params);
 
 				if(basis == "auto") 
 				attr(solution, "basis.opt") <- attributes(eval.cv(solution$solution, params))$basis.opt
+
+        ## Restore seed
+
+        if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
 
 				return(solution)
 		}
@@ -417,6 +434,10 @@ krscvNOMAD <- function(xz,
 
 		if(any(degree==degree.max)) warning(paste(" optimal degree equals search maximum (", degree.max,"): rerun with larger degree.max",sep=""))
 		if(any(segments==(segments.max+1))) warning(paste(" optimal segment equals search maximum (", segments.max+1,"): rerun with larger segments.max",sep=""))  
+		if(!is.null(opts$MAX_BB_EVAL)){
+				if(nmulti>0) {if(nmulti*opts$MAX_BB_EVAL <= nomad.solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep=""))} 
+				if(nmulti==0) {if(opts$MAX_BB_EVAL <= nomad.solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep="")) }
+		}
 
 		## We do not use the following parameters
 		cv.vec <- NULL

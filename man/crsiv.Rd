@@ -36,8 +36,13 @@ crsiv(y,
       iterate.tol = 1.0e-05,
       constant = 0.5,
       method = c("Landweber-Fridman","Tikhonov"),
-      opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10","DISPLAY_DEGREE"=0),
-      deriv=0,
+      opts = list("MAX_BB_EVAL"=10000,
+                  "EPSILON"=.Machine$double.eps,
+                  "INITIAL_MESH_SIZE"="r1.0e-01",
+                  "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+                  "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+                  "DISPLAY_DEGREE"=0),
+      deriv = 0,
       ...)
 }
 
@@ -45,75 +50,74 @@ crsiv(y,
   \item{y}{
     a one (1) dimensional numeric or integer vector of dependent data, each
     element \eqn{i} corresponding to each observation (row) \eqn{i} of
-    \code{z}.
+    \code{z}
   }
 
   \item{z}{
     a \eqn{p}-variate data frame of endogenous predictors. The data
     types may be continuous, discrete (unordered and ordered factors),
-    or some combination thereof.
+    or some combination thereof
   }
   \item{w}{
     a \eqn{q}-variate data frame of instruments. The data types may be
     continuous, discrete (unordered and ordered factors), or some
-    combination thereof.
+    combination thereof
   }
   \item{x}{
     an \eqn{r}-variate data frame of exogenous predictors. The data
     types may be continuous, discrete (unordered and ordered factors),
-    or some combination thereof.
+    or some combination thereof
   }
   \item{zeval}{
     a \eqn{p}-variate data frame of endogenous predictors on which the
     regression will be estimated (evaluation data). By default, evaluation
-    takes place on the data provided by \code{z}.
+    takes place on the data provided by \code{z}
   }
   \item{weval}{
     a \eqn{q}-variate data frame of instruments on which the regression
     will be estimated (evaluation data). By default, evaluation
-    takes place on the data provided by \code{w}.
+    takes place on the data provided by \code{w}
   }
   \item{xeval}{
     an \eqn{r}-variate data frame of exogenous predictors on which the
     regression will be estimated (evaluation data). By default,
-    evaluation takes place on the data provided by \code{x}.
+    evaluation takes place on the data provided by \code{x}
   }
   \item{alpha}{
     a numeric scalar that, if supplied, is used rather than numerically
-    solving for \code{alpha}, when using \code{method="Tikhonov"}.
+    solving for \code{alpha}, when using \code{method="Tikhonov"}
     }
   \item{alpha.min}{
     minimum of search range for \eqn{\alpha}{alpha}, the Tikhonov
-    regularization parameter, when using \code{method="Tikhonov"}.
+    regularization parameter, when using \code{method="Tikhonov"}
 }
   \item{alpha.max}{
     maximum of search range for \eqn{\alpha}{alpha}, the Tikhonov
-    regularization parameter, when using  \code{method="Tikhonov"}.
+    regularization parameter, when using  \code{method="Tikhonov"}
   }
 \item{alpha.tol}{
   the search tolerance for \code{optimize} when solving for
-  \eqn{\alpha}{alpha}, the Tikhonov regularization parameter, when using
-  when using \code{method="Tikhonov"}.
+  \eqn{\alpha}{alpha}, the Tikhonov regularization parameter, 
+  when using \code{method="Tikhonov"}
 }
 \item{iterate.max}{
   an integer indicating the maximum number of iterations permitted
-  before termination occurs when using \code{method="Landweber-Fridman"}.
+  before termination occurs when using \code{method="Landweber-Fridman"}
 }
 \item{iterate.tol}{
-  the search tolerance for the stopping rule when using \code{method="Landweber-Fridman"}.
+  the search tolerance for the stopping rule when using \code{method="Landweber-Fridman"}
 }
 \item{constant}{
-  the constant to use when using  \code{method="Landweber-Fridman"}.
+  the constant to use when using  \code{method="Landweber-Fridman"}
 }
 \item{method}{
-  the regularization method employed (defaults to
-   \code{"Landweber-Fridman"}, see Horowitz (2011); see Darolles,
-   Fan, Florens and Renault (forthcoming) for details for
-   \code{"Tikhonov"}).
-}
+  the regularization method employed (default
+   \code{"Landweber-Fridman"}, see Horowitz (2011); see Darolles, Fan,
+   Florens and Renault (forthcoming) for details for \code{"Tikhonov"})
+ }
   \item{opts}{
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
-    further details).
+    further details)
   }
   \item{deriv}{ an integer \code{l} (default \code{deriv=0}) specifying
   whether to compute the univariate \code{l}th partial derivative for
@@ -124,24 +128,29 @@ crsiv(y,
   issued to this effect
   }
 \item{...}{
-  additional arguments supplied to \code{\link{crs}}.
+  additional arguments supplied to \code{\link{crs}}
 }
 }
 \details{
   Tikhonov regularization requires computation of weight matrices of
   dimension \eqn{n\times n}{n x n} which can be computationally costly
-  in terms of memory requirements and may be unsuitable for large
-  datasets. Landweber-Fridman will be preferred in such settings as it
-  does not require construction and storage of these weight matrices
-  while it also avoids the need for numerical optimization methods to
-  determine \eqn{\alpha}{alpha}.
+  in terms of memory requirements and may be unsuitable
+  (i.e. unfeasible) for large datasets. Landweber-Fridman will be
+  preferred in such settings as it does not require construction and
+  storage of these weight matrices while it also avoids the need for
+  numerical optimization methods to determine \eqn{\alpha}{alpha},
+  though it does require iteration that may be equally or even more
+  computationally demanding in terms of total computation time.
 
-  \code{method="Landweber-Fridman"} uses an optimal stopping rule based
-  upon \eqn{||E(y|w)-E(\varphi_k(z,x)|w)||^2
-  }{||E(y|w)-E(phi(z,x)|w)||^2 }. However, if insufficient training is
-  conducted the estimates can be overly noisy. To best guard against
+  When using \code{method="Landweber-Fridman"}, an optimal stopping rule
+  based upon \eqn{||E(y|w)-E(\varphi_k(z,x)|w)||^2
+  }{||E(y|w)-E(phi(z,x)|w)||^2 } is used to terminate
+  iteration. However, if local rather than global optima are encountered
+  the resulting estimates can be overly noisy. To best guard against
   this eventuality set \code{nmulti} to a larger number than the default
-  \code{nmulti=0} for \code{\link{crs}}.
+  \code{nmulti=5} for \code{\link{crs}} when using \code{cv="nomad"} or
+  instead use \code{cv="exhaustive"} if possible (this may not be
+  feasible for non-trivial problems).
 
   When using \code{method="Landweber-Fridman"}, iteration will terminate
   when either the change in the value of
@@ -151,6 +160,20 @@ crsiv(y,
   \eqn{||E((y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
   }{||(E(y|w)-E(phi(z,x)|w))/E(y|w)||^2 } stops falling in value and
   starts rising.
+
+  When your problem is a simple one (e.g. univariate \eqn{Z}, \eqn{W},
+  and \eqn{X}) you might want to avoid \code{cv="nomad"} and instead use
+  \code{cv="exhaustive"} since exhaustive search may be feasible (for
+  \code{degree.max} and \code{segments.max} not overly large). This will
+  guarantee an exact solution for each iteration (i.e. there will be no
+  errors arising due to numerical search).
+
+  \code{demo(crsiv)}, \code{demo(crsiv_exog)}, and
+  \code{demo(crsiv_exog_persp)} provide flexible interactive
+  demonstrations similar to the example below that allow you to modify
+  and experiment with parameters such as the sample size, method, and so
+  forth in an interactive session.
+  
 }
 \value{
   
@@ -218,11 +241,16 @@ This function should be considered to be in `beta test' status until further not
 
 set.seed(42)
 n <- 1500
-nmulti <- 10
 
-## Turn off display I/O for crs() NOMAD search...
+## Turn off display I/O for crs() NOMAD search (i.e. keep the standard
+## defaults and add "DISPLAY_DEGREE"=0)...
 
-opts <- list("DISPLAY_DEGREE"=0)
+opts <- list("MAX_BB_EVAL"=10000,
+             "EPSILON"=.Machine$double.eps,
+             "INITIAL_MESH_SIZE"="r1.0e-01",
+             "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+             "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+             "DISPLAY_DEGREE"=0)
 
 ## The DGP is as follows:
 
@@ -269,12 +297,12 @@ evaldata <- evaldata[order(evaldata$z),]
 
 ## Compute the non-IV regression spline estimator of E(y|z)
 
-model.noniv <- crs(y~z,nmulti=nmulti,opts=opts)
+model.noniv <- crs(y~z,opts=opts)
 mean.noniv <- predict(model.noniv,newdata=evaldata)
 
 ## Compute the IV-regression spline estimator of phi(z)
 
-model.iv <- crsiv(y=y,z=z,w=w,nmulti=nmulti)
+model.iv <- crsiv(y=y,z=z,w=w)
 phi.iv <- predict(model.iv,newdata=evaldata)
 
 ## For the plots, restrict focal attention to the bulk of the data

@@ -5,31 +5,31 @@
 \title{Categorical Factor Regression Spline Cross-Validation}
 
 \description{
-   
-  \code{frscvNOMAD} computes NOMAD-based (Nonsmooth Optimization by Mesh
-  Adaptive Direct Search) cross-validation directed search for a
+  \code{frscvNOMAD} computes NOMAD-based (Nonsmooth
+  Optimization by Mesh Adaptive Direct Search, Abramson, Audet, Couture
+  and Le Digabel (2011)) cross-validation directed search for a
   regression spline estimate of a one (1) dimensional dependent variable
   on an \code{r}-dimensional vector of continuous predictors and
-  ordinal/nominal factor predictors.
-  
-}
+  nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
+  predictors.  }
 
 \usage{
 frscvNOMAD(xz,
            y,
-           degree.max=10, 
-           segments.max=10, 
-           degree.min=0, 
-           segments.min=1, 
-           complexity=c("degree-knots","degree","knots"),
-           knots=c("quantiles","uniform"),
-           basis=c("additive","tensor","auto"),
-           cv.func=c("cv.ls","cv.gcv","cv.aic"),
-           degree=degree,
-           segments=segments, 
-           include=include, 
-           opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10"),
-           nmulti=0)
+           degree.max = 10, 
+           segments.max = 10, 
+           degree.min = 0, 
+           segments.min = 1, 
+           complexity = c("degree-knots","degree","knots"),
+           knots = c("quantiles","uniform"),
+           basis = c("additive","tensor","auto"),
+           cv.func = c("cv.ls","cv.gcv","cv.aic"),
+           degree = degree,
+           segments = segments, 
+           include = include, 
+           random.seed = 42,
+           opts = list(),
+           nmulti = 0)
 }
 
 \arguments{
@@ -38,9 +38,8 @@ frscvNOMAD(xz,
     continuous univariate vector
   }
   
-  \item{xz}{
-    continuous and/or ordinal/nominal predictors
-  }
+  \item{xz}{ continuous and/or nominal/ordinal
+    (\code{\link{factor}}/\code{\link{ordered}}) predictors }
 
   \item{degree.max}{ the maximum degree of the B-spline basis for
     each of the continuous predictors (default \code{degree.max=10})}
@@ -66,7 +65,7 @@ frscvNOMAD(xz,
   specifying where knots are to be placed. \sQuote{quantiles} specifies
   knots placed at equally spaced quantiles (equal number of observations
   lie in each segment) and \sQuote{uniform} specifies knots placed at
-  equally spaced intervals. }
+  equally spaced intervals }
 
 \item{basis}{ a character string (default \code{basis="additive"})
     indicating whether the additive or tensor product B-spline basis
@@ -85,7 +84,7 @@ frscvNOMAD(xz,
     (Craven and Wahba (1979)), \code{cv.aic} specifies expected
     Kullback-Leibler cross-validation (Hurvich, Simonoff, and Tsai
     (1998)), and \code{cv.ls} specifies least-squares
-    cross-validation. Defaults to \code{cv.ls}.  }
+    cross-validation  }
   
   \item{degree}{ integer/vector specifying the degree of the B-spline
     basis for each dimension of the continuous \code{x}}
@@ -95,16 +94,21 @@ frscvNOMAD(xz,
     (i.e. number of knots minus one)}
 
 \item{include}{ integer/vector for the categorical predictors. If it 
-   is not NULL,   it will be the initial value for the fitting.}
+   is not NULL,   it will be the initial value for the fitting}
 
+\item{random.seed}{
+  when it is not missing and not equal to 0, the initial points  will 
+ be generated using this seed when \code{nmulti > 0}
+}
+      
 \item{opts}{
-  arguments passed to the NOMAD solver.
+  arguments passed to the NOMAD solver
   }
   
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
-    points. Defaults to \code{0}.
+    points (default \code{nmulti=0})
   }
 
 }
@@ -113,24 +117,31 @@ frscvNOMAD(xz,
 
   \code{frscvNOMAD} computes cross-validation for a regression spline
   estimate of a one (1) dimensional dependent variable on an
-  \code{r}-dimensional vector of continuous and ordinal/nominal factor
-  predictors. The optimal \code{K}/\code{I} combination is returned
-  along with other results (see below for return values).
+  \code{r}-dimensional vector of continuous and nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) predictors. The optimal
+  \code{K}/\code{I} combination is returned along with other results
+  (see below for return values).
 
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
   Scientific Library and the \code{\link{tensor.prod.model.matrix}}
-  function in the \pkg{mgcv} package.
+  function.
 
-  For the ordinal/nominal predictors the regression spline model uses
-  indicator basis functions.
+  For the nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
+  predictors the regression spline model uses indicator basis functions.
 
-  Note that, since the approach is built on top of the regression spline
-  for each unique ordinal/nominal combination, the splines must be
-  estimable for every such unique combination. When this is not the case
-  the user must combine data in a manner such that this is achieved.
+  Numerical search for the optimal
+  \code{degree}/\code{segments}/\code{I} is undertaken using
+  \code{\link{snomadr}}.
   
+  Note that, since the approach is built on top of the regression spline
+  for each unique nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) combination, the splines
+  must be estimable for every such unique combination. When this is not
+  the case the user must combine data in a manner such that this is
+  achieved.
+
 }
 
 \value{
@@ -143,8 +154,10 @@ frscvNOMAD(xz,
     number of segments }
   \item{I}{ scalar/vector containing an indicator of whether the
     predictor is included or not for each dimension of the
-    ordinal/nominal factors }
-  \item{K.mat}{ vector/matrix of values of \code{K} evaluated during search }  
+    nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) predictors }
+  \item{K.mat}{ vector/matrix of values of \code{K} evaluated during
+    search }  
   \item{degree.max}{ the maximum degree of the B-spline basis for
     each of the continuous predictors (default \code{degree.max=10})}
   \item{segments.max}{ the maximum segments of the B-spline basis for
@@ -175,7 +188,7 @@ frscvNOMAD(xz,
     using an improved Akaike information criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
-  S. Le Digabel, (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
+  S. Le Digabel (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
   optimization with the MADS algorithm}. ACM Transactions on
   Mathematical Software, 37(4):44:1-44:15.
   
@@ -191,7 +204,7 @@ frscvNOMAD(xz,
 }
 
 \author{
-  Jeffrey S. Racine \email{racinej@mcmaster.ca}
+  Jeffrey S. Racine \email{racinej@mcmaster.ca},   Zhenghua Nie <niez@mcmaster.ca>
 }
 
 %\section{Usage Issues}{

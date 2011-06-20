@@ -42,24 +42,6 @@ bool file_exists(const char*path)
 		return stat(path,&sbuf)==0;
 }
 
-/* The following code is modified from  R_CheckUserInterrupt */
- void R_Interrupt(void)  
- { 
-// R_CheckStack();		 
- /* This is the point where GUI systems need to do enough event 
- processing to determine whether there is a user interrupt event 
- pending. Need to be careful not to do too much event 
- processing though: if event handlers written in R are allowed 
- to run at this point then we end up with concurrent R 
- evaluations and that can cause problems until we have proper 
- concurrency support. LT */ 
-//#if ( defined(HAVE_AQUA) || defined(Win32) ) 
-// R_ProcessEvents(); 
-// #else 
- onintr(); 
-// #endif /* Win32 */ 
- } 
-
 //
 // Extracts element with name 'str' from R object 'list'
 // and returns that element.
@@ -258,9 +240,9 @@ class RMy_Evaluator : public NOMAD::Evaluator {
 				}
 };
 
-SEXP print_solution(double obj_value, double *x, int n, int iter, int nmulti, NOMAD::stop_type status)
+SEXP print_solution(double obj_value, double *x, int n, int bbe, int iter, int nmulti, NOMAD::stop_type status)
 {
-		int num_return_elements = 5;
+		int num_return_elements = 6;
 		SEXP R_result_list;
 
 		// R_result_list is a member object, which has been protected in the constructor
@@ -273,9 +255,10 @@ SEXP print_solution(double obj_value, double *x, int n, int iter, int nmulti, NO
 
 		SET_STRING_ELT(names, 0, mkChar("status"));
 		SET_STRING_ELT(names, 1, mkChar("message"));
-		SET_STRING_ELT(names, 2, mkChar("iterations"));
+		SET_STRING_ELT(names, 2, mkChar("bbe"));
 		SET_STRING_ELT(names, 3, mkChar("objective"));
 		SET_STRING_ELT(names, 4, mkChar("solution"));
+		SET_STRING_ELT(names, 5, mkChar("iterations"));
 		setAttrib(R_result_list, R_NamesSymbol, names);
 
 		// convert status to an R object
@@ -312,22 +295,87 @@ SEXP print_solution(double obj_value, double *x, int n, int iter, int nmulti, NO
 				REAL(R_solution)[i] = x[i];
 		}
 
-		// convert number of iterations to an R object and add to the result_list
+		// convert number of bbe to an R object and add to the result_list
+		SEXP R_num_bbe;
+		PROTECT(R_num_bbe = allocVector(INTSXP,1));
+		INTEGER(R_num_bbe)[0] = bbe;
+
+		// convert number of iter to an R object and add to the result_list
 		SEXP R_num_iterations;
 		PROTECT(R_num_iterations = allocVector(INTSXP,1));
 		INTEGER(R_num_iterations)[0] = iter;
 
-
 		// add elements to the list
 		SET_VECTOR_ELT(R_result_list, 0, R_status);
 		SET_VECTOR_ELT(R_result_list, 1, R_status_message);
-		SET_VECTOR_ELT(R_result_list, 2, R_num_iterations);
+		SET_VECTOR_ELT(R_result_list, 2, R_num_bbe);
 		SET_VECTOR_ELT(R_result_list, 3, R_objective);
 		SET_VECTOR_ELT(R_result_list, 4, R_solution);
+		SET_VECTOR_ELT(R_result_list, 5, R_num_iterations);
 
 		UNPROTECT(num_return_elements+2);
 
 		return(R_result_list);
+}
+
+//Following function will return the information and help about NOMAD.
+//This is based on the program "nomad.cpp".
+extern "C" {
+
+		SEXP snomadRInfo( SEXP args )
+		{
+				R_CheckUserInterrupt();
+
+				SEXP solution;
+
+				NOMAD::Display out(std::cout);
+
+				//showArgs1(args);
+
+				PROTECT(solution=args);
+
+				SEXP sinfo = getListElement(args,"info");
+				SEXP sversion = getListElement(args,"version");
+				SEXP shelp = getListElement(args,"help");
+
+				string strinfo =  isNull(sinfo) ? "" : CHAR(STRING_ELT(sinfo, 0));
+				string strversion = isNull(sversion) ? "" : CHAR(STRING_ELT(sversion, 0));
+				if(strinfo[0]=='-' && (strinfo[1]=='i' || strinfo[1]=='I')) display_info ( out );
+				if(strversion[0]=='-' && (strversion[1]=='v' || strversion[1]=='V')) display_version ( out );
+
+				string strhelp = isNull(shelp) ? "" : CHAR(STRING_ELT(shelp, 0));
+
+				if(strhelp.c_str()[0]=='-'&& (strhelp.c_str()[1]=='h'||strhelp.c_str()[1]=='H'))
+				{
+						NOMAD::Parameters param(out);
+						char **argv;
+						argv = new char*[5];
+						argv[0] = new char[200];
+						argv[1] = new char[200];
+						argv[2] = new char[200];
+						strcpy(argv[0], "nomad"); /* this is for matching the function param.help */
+						strcpy(argv[1], "-h");
+						int i = 3;
+						while(strhelp[i] !='\0' && strhelp[i]==' ') i++;
+						if(strhelp[i]!='\0') {
+								strcpy(argv[2], &CHAR(STRING_ELT(shelp, 0))[i]);
+								i=0;  /* delete space at the end of the string. */
+								while(argv[2][i] != ' ') i++;
+								argv[2][i] = '\0';
+						}
+						else 
+								strcpy(argv[2], "all");
+
+						param.help(3, argv);
+						delete(argv);
+				}
+
+				NOMAD::end();
+
+				UNPROTECT(1);
+
+				return(solution);
+		}
 }
 // we want this function to be available in R, so we put extern around it.
 extern "C" {
@@ -363,7 +411,7 @@ extern "C" {
 						//				param.set_MIN_POLL_SIZE(0.001);
 						//				param.set_MIN_MESH_SIZE(0.001);
 						//  			param.set_INITIAL_MESH_SIZE(0.01);
-						param.set_MAX_BB_EVAL(100);
+						param.set_MAX_BB_EVAL(10000);
 
 						vector<NOMAD::bb_input_type> bbin(N);
 						NOMAD::Point x0(N);
@@ -442,7 +490,7 @@ extern "C" {
 						NOMAD::Mads mads(param,&ev);
 						NOMAD::stop_type status = mads.run();
 
-						if ( status == NOMAD::CTRL_C ) R_Interrupt();  //)exit(-1);
+						if ( status == NOMAD::CTRL_C ) R_CheckUserInterrupt(); //)exit(-1);
 
 						/* output the results of statistics, we may need to learn more about Stats */
 						NOMAD::Stats &stats = mads.get_stats();
@@ -469,7 +517,7 @@ extern "C" {
 								sol_x[i]= best_x[i].value();
 						}
 
-						solution = print_solution(obj_value.value(), sol_x, N, mads.get_cache().size(), 0,  status);
+						solution = print_solution(obj_value.value(), sol_x, N, mads.get_cache().size(), stats.get_iterations(),  0,  status);
 
 						free(sol_x);
 
@@ -575,8 +623,16 @@ extern "C" {
 				theenv = getListElement(args, "snomadr.environment");
 				thefun = getListElement(args, "eval.f");
 
-				srand(unsigned(time(NULL)));
-				rand();
+				unsigned int seed;
+				SEXP rseed = getListElement(args, "random.seed");
+				if(isNull(rseed)) 
+						seed = unsigned(time(NULL));
+				else
+						seed = INTEGER(rseed)[0];
+
+				if(seed == 0) seed = unsigned(time(NULL));
+
+				srand(seed);
 
 				try{
 						R_CheckUserInterrupt();
@@ -599,7 +655,7 @@ extern "C" {
 						//				param.set_MIN_POLL_SIZE(0.001);
 						//				param.set_MIN_MESH_SIZE(0.001);
 						//	  		param.set_INITIAL_MESH_SIZE(0.01);
-						param.set_MAX_BB_EVAL(100);
+						param.set_MAX_BB_EVAL(10000);
 
 
 						vector<NOMAD::bb_input_type> bbin(N);
@@ -712,6 +768,7 @@ extern "C" {
 						// MADS runs:
 						// ----------
 						int bbe = 0;
+						int iter = 0;
 						i = 0;
 						NOMAD::stop_type status ;
 
@@ -723,10 +780,11 @@ extern "C" {
 								NOMAD::Mads mads ( param , &ev );
 								status = mads.run();
 
-								if ( status == NOMAD::CTRL_C ) R_Interrupt();  //)exit(-1);
+								if ( status == NOMAD::CTRL_C ) R_CheckUserInterrupt(); //)exit(-1);
 
 
-								bbe += mads.get_cache().size();
+								bbe += mads.get_cache().size();  /* the number of evaluations of the objectibve function. */
+								iter += mads.get_stats().get_iterations();
 
 								// displays and remember the best point:
 								if( print_output > 0 ) 
@@ -799,7 +857,7 @@ extern "C" {
 								sol_x[i]= best_x[i].value();
 						}
 
-						solution = print_solution(obj_value, sol_x, N, bbe, nmulti, status);
+						solution = print_solution(obj_value, sol_x, N, bbe, iter, nmulti, status);
 
 						free(sol_x);
 

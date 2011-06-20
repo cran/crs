@@ -48,33 +48,39 @@ crs(\dots)
     data.return = FALSE,
     prune = FALSE,
     restarts = 0,
-    opts = list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10"),
-    nmulti = 0, 
+    random.seed = 42,
+    opts = list("MAX_BB_EVAL"=10000,
+                "EPSILON"=.Machine$double.eps,
+                "INITIAL_MESH_SIZE"="r1.0e-01",
+                "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+                "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep="")),
+    nmulti = 5, 
     \dots)
 }
 \arguments{
 
-\item{xz}{ numeric (\code{x}) and or ordinal/nominal factor predictors
-(\code{z}) }
+  \item{xz}{ numeric (\code{x}) and or nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) predictors (\code{z}) }
 
 \item{y}{ a numeric vector of responses. }
 
 \item{degree}{ integer/vector specifying the polynomial degree of the
 B-spline basis for each dimension of the continuous \code{x}
-(default = cubic spline)}
+(default \code{degree=3}, i.e. cubic spline)}
 
-\item{segments}{ integer/vector specifying the number of segments of
-the B-spline basis for each dimension of the continuous \code{x}
-(i.e. number of knots minus one) (default = one segment)}
+\item{segments}{ integer/vector specifying the number of segments of the
+B-spline basis for each dimension of the continuous \code{x}
+(i.e. number of knots minus one) (default \code{segments=1}, i.e. Bezier
+curve)}
 
 \item{include}{ integer/vector specifying whether each of the
-ordinal/nominal predictors in \code{x} are included or omitted from
-the resulting estimate }
+nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}}) predictors
+in \code{x} are included or omitted from the resulting estimate }
 
   \item{kernel.type}{
     a character string indicating whether the kernel
     for the discrete predictors \code{z} should be unordered
-    (\dQuote{\code{nominal}}, default) or ordered
+    (default \dQuote{\code{nominal}}) or ordered
     (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
   }
   
@@ -97,7 +103,7 @@ the resulting estimate }
     (Craven and Wahba (1979)), \code{cv.aic} specifies expected
     Kullback-Leibler cross-validation (Hurvich, Simonoff, and Tsai
     (1998)), and \code{cv.ls} specifies least-squares
-    cross-validation. Defaults to \code{cv.ls}.  }
+    cross-validation }
   
   \item{kernel}{ a logical value (default \code{kernel=TRUE})
     indicating whether to use kernel smoothing or not }
@@ -126,7 +132,7 @@ the resulting estimate }
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
   Scientific Library and the \code{\link{tensor.prod.model.matrix}}
-  function in the \pkg{mgcv} package}
+  function }
 
    \item{knots}{ a character string (default \code{knots="quantiles"})
   specifying where knots are to be placed. \sQuote{quantiles} specifies
@@ -166,14 +172,19 @@ the resulting estimate }
     process of finding extrema of the cross-validation function (for the
     bandwidths only) from different (random) initial points }
 
+  \item{random.seed}{ when it is not missing and not equal to 0, the
+    initial points will be generated using this seed when using
+    \code{\link{frscvNOMAD}} or \code{\link{krscvNOMAD}} and
+    \code{nmulti > 0} }
+      
   \item{opts}{
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
-    further details).
+    further details)
   }
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
-    points. Defaults to \code{0}.
+    points (default \code{nmulti=5})
   }
 
  
@@ -188,12 +199,12 @@ the resulting estimate }
   \preformatted{
     ## Categorical data should be cast before call (necessary for plot method)
     z <- factor(z) 
-    model <- crs(y~x+z,kernel=TRUE,basis="auto")
+    model <- crs(y~x+z,basis="auto")
     
     ## Categorical data should be cast before call (necessary for plot method)
     z1 <- factor(z1)
     z2 <- factor(z2)
-    model <- crs(y~x1+x2+z1+z2,cv="none",degree=c(3,4),lambda=c(.1,.2),kernel=TRUE)
+    model <- crs(y~x1+x2+z1+z2,cv="none",degree=c(3,4),lambda=c(.1,.2))
     }
     
   \code{crs} computes a regression spline estimate of a one (1)
@@ -204,8 +215,7 @@ the resulting estimate }
   The regression spline model employs the tensor product B-spline basis
   matrix for a multivariate polynomial spline via the B-spline routines
   in the GNU Scientific Library and the
-  \code{\link{tensor.prod.model.matrix}} function in the \pkg{mgcv}
-  package.
+  \code{\link{tensor.prod.model.matrix}} function.
 
   When \code{basis="additive"} the model becomes additive in nature
   (i.e. no interaction/tensor terms thus semiparametric not fully
@@ -215,7 +225,8 @@ the resulting estimate }
   product basis.
 
   When \code{kernel=FALSE} the model uses indicator basis functions for
-  the ordinal/nominal predictors rather than kernel weighting.
+  the nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
+  predictors rather than kernel weighting.
 
   When \code{kernel=TRUE} the product kernel function for the discrete
   predictors is of the \sQuote{Li-Racine} type (see Li and Racine (2007)
@@ -262,10 +273,6 @@ the resulting estimate }
   to this effect. Note also that this option can only be used when
   \code{kernel=FALSE}.
 
-  When \code{segments>1} we use uniform knots determined via the GSL
-  function \code{gsl_bspline_knots_uniform}. Note the number of
-  `breakpoints' (i.e. knots) is equal to the number of segments plus 1.
-  
 }
 
 \value{
@@ -296,8 +303,9 @@ the resulting estimate }
   the B-spline basis for each dimension of the continuous \code{x}}
 
   \item{include}{ integer/vector specifying whether each of the
-  ordinal/nominal predictors \code{z} are included or omitted from the
-  resulting estimate if \code{kernel=FALSE} (see below)}
+  nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
+  predictors \code{z} are included or omitted from the resulting
+  estimate if \code{kernel=FALSE} (see below)}
 
   \item{kernel}{ a logical value indicating whether kernel smoothing was
   used (\code{kernel=TRUE}) or not }
@@ -349,9 +357,9 @@ the resulting estimate }
   categorical predictors prior to listing them in the
   \code{\link{formula}} interface.
   
-  Note that \code{\link{summary}} supports the option
-  \code{sigtest=TRUE} that conducts an F-test for significance for each
-  predictor.
+  Note that when \code{kernel=FALSE} \code{\link{summary}} supports the
+  option \code{sigtest=TRUE} that conducts an F-test for significance
+  for each predictor.
 
 }
 \references{
@@ -368,7 +376,7 @@ the resulting estimate }
     using an improved Akaike information criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
-  S. Le Digabel, (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
+  S. Le Digabel (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
   optimization with the MADS algorithm}. ACM Transactions on
   Mathematical Software, 37(4):44:1-44:15.
 

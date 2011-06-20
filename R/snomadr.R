@@ -20,6 +20,7 @@
 #		call : the call that was made to solve
 #		status : integer value with the status of the optimization (0 is success)
 #		message : more informative message with the status of the optimization
+#		bbe : number of the objective function that were executed
 #		iterations : number of iterations that were executed
 #		objective : value if the objective function in the solution
 #		solution : optimal value of the controls
@@ -48,18 +49,54 @@ function( eval.f,
           lb = NULL, 
           ub = NULL, 
 					nmulti = 0,   #0: call single nomad,   
+					random.seed = 0,  # seed will be used for generating multiple initial points.
           opts = list(),
 					print.output = TRUE,  #0: if it is FALSE,  there will be no output in snomadr, if DISPLAY_DEGREE=0 and print_output is true, there will be no any output. 
+					information = list(), 
           snomadr.environment = new.env(),
           ... ) {
 
-# The following files are for crs. 
-#		spline.path <- path.package('crs')
-#		source(paste(spline.path,"/R/spline.R", sep="")) 
-#		source(paste(spline.path,"/R/util.R", sep="")) 
-#		source(paste(spline.path,"/R/mgcv.R", sep="")) 
-#		source(paste(spline.path,"/R/kernel.R", sep="")) 
+  ## Save seed prior to setting
+  
+  if(exists(".Random.seed", .GlobalEnv)) {
+    save.seed <- get(".Random.seed", .GlobalEnv)
+    exists.seed = TRUE
+  } else {
+    exists.seed = FALSE
+  }
+  
+  set.seed(random.seed)
 
+  if(length(information) > 0) {
+    sinfo <- NULL
+    sversion <- NULL
+    shelp <- NULL
+    if(!is.null(information$info)) sinfo <-information$info
+    if(!is.null(information$version)) sversion <- information$version
+    if(!is.null(information$help)) shelp <- information$help
+    
+    ret <- list( info=sinfo, version=sversion, help=shelp, snomadr.environment)
+    
+    attr(ret, "class") <- "snomadr"
+    
+    ## add the current call to the list
+    ret$call <- match.call()
+    
+    ## pass snomadr object to C code
+    solution <- .Call( snomadRInfo, ret )
+    ## remove the environment from the return object
+    ret$environment <- NULL
+    ## we have not implemented the following output from snomadRInfo
+    ##ret$Info<-solution$Info
+    ##ret$Version<-solution$Version
+    ##ret$Help<-solution$Help
+    
+    return(ret)
+    
+  }
+  
+  information <- NULL  # we will check whether it is NULL in print.snomadr.
+  
 		# the number of variables should not be null.
 		if (missing(n ) || missing(eval.f)) stop("Must provide the objective function and the number of variables")  
 		if(missing(nmulti)||nmulti < 0) nmulti <- 0
@@ -75,7 +112,7 @@ function( eval.f,
 		if ( is.null( ub ) ) { ub <- rep(  Inf, n ) }
 
 		#we don't need to generate the inital point for multiple mads runs. 
-		if(is.null(x0)&&nmulti < 2){   
+		if(is.null(x0)&&nmulti < 1){   
 				x0<-rep(0.0, n)
 				for(i in 1:n){
 						x0[i] <- runif(1, min=lb[i], max=ub[i])
@@ -142,6 +179,7 @@ function( eval.f,
 								"lower.bounds"=lb, 
 								"upper.bounds"=ub, 
 								"nmulti"=nmulti, 
+								"random.seed"=as.integer(random.seed), 
 								"options"=get.option.types(opts),
 								"print.output"=print.output, 
 								"snomadr.environment"=snomadr.environment )
@@ -169,9 +207,14 @@ function( eval.f,
 		# add solution variables to object
 		ret$status <- solution$status
 		ret$message <- solution$message
+		ret$bbe <- solution$bbe
 		ret$iterations <- solution$iterations
 		ret$objective <- solution$objective
 		ret$solution <- solution$solution
 
-		return( ret )
+  ## Restore seed
+
+  if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
+
+	return( ret )
 }

@@ -21,8 +21,9 @@ frscvNOMAD <- function(xz,
 											 cv.func=c("cv.ls","cv.gcv","cv.aic"),
 											 degree=degree,
 											 segments=segments, 
-											 include=include, 
-											 opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10"),
+											 include=include,
+                       random.seed=42,
+											 opts=list(),
 											 nmulti=0) {
 
 		complexity <- match.arg(complexity)
@@ -183,11 +184,21 @@ frscvNOMAD <- function(xz,
 				xdegree <- degree
 				xinclude <- include
 
+        ## Save seed prior to setting
+
+        if(exists(".Random.seed", .GlobalEnv)) {
+          save.seed <- get(".Random.seed", .GlobalEnv)
+          exists.seed = TRUE
+        } else {
+          exists.seed = FALSE
+        }
+
+        set.seed(random.seed)
+
 				if(is.null(xdegree)) xdegree <- sample(degree.min:degree.max, num.x, replace=T)
 				if(is.null(xsegments)) xsegments <- sample(segments.min:segments.max, num.x, replace=T)
 				if(is.null(xinclude)) xinclude <- sample(0:1, num.z, replace=T)
 				
-
 				if(complexity =="degree-knots") {
 						x0 <- c(xdegree, xsegments, xinclude)
 						bbin <-rep(1, num.x*2+num.z)
@@ -228,12 +239,17 @@ frscvNOMAD <- function(xz,
 													lb=lb,
 													ub=ub,
 													nmulti=as.integer(nmulti),
+													random.seed=random.seed, 
 													opts=opts,
 													print.output=print.output, 
 													params=params);
 
 				if(basis == "auto") 
 				attr(solution, "basis.opt") <- attributes(eval.cv(solution$solution, params))$basis.opt
+
+        ## Restore seed
+
+        if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
 
 				return(solution)
 		}
@@ -388,6 +404,10 @@ frscvNOMAD <- function(xz,
 
 		if(any(degree==degree.max)) warning(paste(" optimal degree equals search maximum (", degree.max,"): rerun with larger degree.max",sep=""))
 		if(any(segments==(segments.max+1))) warning(paste(" optimal segment equals search maximum (", segments.max+1,"): rerun with larger segments.max",sep=""))  
+		if(!is.null(opts$MAX_BB_EVAL)){
+				if(nmulti>0) {if(nmulti*opts$MAX_BB_EVAL <= nomad.solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep=""))} 
+				if(nmulti==0) {if(opts$MAX_BB_EVAL <= nomad.solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep="")) }
+		}
 
 		basis.opt <- basis
 		if(basis == "auto") basis.opt <- attributes(nomad.solution)$basis.opt

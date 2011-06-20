@@ -6,31 +6,33 @@
 
 \description{
   
-  \code{krscvNOMAD} computes computes NOMAD-based (Nonsmooth
-  Optimization by Mesh Adaptive Direct Search) cross-validation directed
-  search for a regression spline estimate of a one (1) dimensional
-  dependent variable on an \code{r}-dimensional vector of continuous and
-  ordinal/nominal factor predictors.
+  \code{krscvNOMAD} computes NOMAD-based (Nonsmooth Optimization by Mesh
+  Adaptive Direct Search, Abramson, Audet, Couture and Le Digabel
+  (2011)) cross-validation directed search for a regression spline
+  estimate of a one (1) dimensional dependent variable on an
+  \code{r}-dimensional vector of continuous and nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) predictors.
   
 }
 \usage{
 krscvNOMAD(xz,
-      y,
-      degree.max=10, 
-      segments.max=10, 
-      degree.min=0, 
-      segments.min=1, 
-      kernel.type = c("nominal","ordinal"),
-      restarts = 0,
-      complexity = c("degree-knots","degree","knots"),
-      knots = c("quantiles","uniform"),
-      basis = c("additive","tensor","auto"),
-      cv.func = c("cv.ls","cv.gcv","cv.aic"),
-      degree = degree,
-      segments = segments,
-      lambda = lambda, 
-      opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10"),
-      nmulti = 0)
+           y,
+           degree.max = 10, 
+           segments.max = 10, 
+           degree.min = 0, 
+           segments.min = 1, 
+           kernel.type = c("nominal","ordinal"),
+           restarts = 0,
+           complexity = c("degree-knots","degree","knots"),
+           knots = c("quantiles","uniform"),
+           basis = c("additive","tensor","auto"),
+           cv.func = c("cv.ls","cv.gcv","cv.aic"),
+           degree = degree,
+           segments = segments,
+           lambda = lambda, 
+           random.seed = 42,
+           opts = list(),
+           nmulti = 0)
 }
 
 \arguments{
@@ -39,9 +41,8 @@ krscvNOMAD(xz,
     continuous univariate vector
   }
   
-  \item{xz}{
-    continuous and/or ordinal/nominal predictors
-  }
+  \item{xz}{ continuous and/or nominal/ordinal
+    (\code{\link{factor}}/\code{\link{ordered}}) predictors }
 
   \item{degree.max}{ the maximum degree of the B-spline basis for
     each of the continuous predictors (default \code{degree.max=10})}
@@ -58,13 +59,13 @@ krscvNOMAD(xz,
   \item{kernel.type}{
     a character string indicating whether the kernel
     for the discrete predictors \code{z} should be unordered
-    (\dQuote{\code{nominal}}, default) or ordered
+    (default \dQuote{\code{nominal}}) or ordered
     (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
   }
   
 \item{restarts}{
     number of times to restart search from different initial random
-    values, defaults to \code{0}
+    values (default \code{restarts=0})
   }
 
   \item{complexity}{a character string (default
@@ -98,7 +99,7 @@ krscvNOMAD(xz,
     (Craven and Wahba (1979)), \code{cv.aic} specifies expected
     Kullback-Leibler cross-validation (Hurvich, Simonoff, and Tsai
     (1998)), and \code{cv.ls} specifies least-squares
-    cross-validation. Defaults to \code{cv.ls}.  }
+    cross-validation  }
   
   \item{degree}{ integer/vector specifying the degree of the B-spline
   basis for each dimension of the continuous \code{x}}
@@ -108,16 +109,21 @@ krscvNOMAD(xz,
   (i.e. number of knots minus one)}
 
   \item{lambda}{ real/vector for the categorical predictors. If it is not
-  NULL,  it will be a starting value of lambd}
+  NULL,  it will be a starting value of lambda}
 
+\item{random.seed}{
+  when it is not missing and not equal to 0, the initial points  will 
+  be generated using this seed when \code{nmulti > 0}
+}
+      
 \item{opts}{
-  arguments passed to the NOMAD solver.
+  arguments passed to the NOMAD solver
   }
   
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
-    points. Defaults to \code{0}.
+    points (default \code{nmulti=0})
   }
 
 }
@@ -126,34 +132,29 @@ krscvNOMAD(xz,
 
   \code{krscvNOMAD} computes cross-validation for a regression spline
   estimate of a one (1) dimensional dependent variable on an
-  \code{r}-dimensional vector of continuous and ordinal/nominal factor
-  predictors. The optimal \code{K}/\code{lambda} combination is returned
-  along with other results (see below for return values). The method
-  uses kernel functions appropriate for categorical (ordinal/nominal)
-  predictors which avoids the loss in efficiency associated with
-  sample-splitting procedures that are typically used when faced with a
-  mix of continuous and ordinal/nominal factor predictors.
+  \code{r}-dimensional vector of continuous and nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) predictors. The optimal
+  \code{K}/\code{lambda} combination is returned along with other
+  results (see below for return values). The method uses kernel
+  functions appropriate for categorical (ordinal/nominal) predictors
+  which avoids the loss in efficiency associated with sample-splitting
+  procedures that are typically used when faced with a mix of continuous
+  and nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
+  predictors.
 
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
   Scientific Library and the \code{\link{tensor.prod.model.matrix}}
-  function in the \pkg{mgcv} package.
+  function.
 
   For the discrete predictors the product kernel function is of the
   \sQuote{Li-Racine} type (see Li and Racine (2007) for details).
   
-  Numerical search is undertaken using \code{\link{optim}} and the
-  box-constrained \code{L-BFGS-B} method (see \code{\link{optim}} for
-  details). The user may restart the algorithm as many times as desired
-  via the \code{restarts} argument. The approach ascends from \code{K=0}
-  through \code{degree.max} and for each value of \code{K} searches for the
-  optimal bandwidths for this value of \code{K}. After the most complex
-  model has been searched then the optimal \code{K}/\code{lambda}
-  combination is selected. If any element of the optimal \code{K} vector
-  coincides with \code{degree.max} a warning is produced and the user ought
-  to restart their search with a larger value of \code{degree.max}.
-
+  Numerical search for the optimal
+  \code{degree}/\code{segments}/\code{lambda} is undertaken using
+  \code{\link{snomadr}}.
+  
   Note that, since the approach is built on top of the regression spline
   for each unique \code{z} combination, the splines must be estimable
   for all every unique \code{z} combination. When this is not the case
@@ -203,7 +204,7 @@ krscvNOMAD(xz,
     using an improved Akaike information criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
-  S. Le Digabel, (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
+  S. Le Digabel (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
   optimization with the MADS algorithm}. ACM Transactions on
   Mathematical Software, 37(4):44:1-44:15.
   
@@ -219,7 +220,7 @@ krscvNOMAD(xz,
 }
 
 \author{
-  Jeffrey S. Racine \email{racinej@mcmaster.ca}
+  Jeffrey S. Racine \email{racinej@mcmaster.ca},  Zhenghua Nie <niez@mcmaster.ca>
 }
 
 %\section{Usage Issues}{

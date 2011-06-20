@@ -1,20 +1,32 @@
-## This demo considers a setting with one endogenous regressor and one
-## instrument.
+## This demo considers nonparametric instrumental regression in a
+## setting with one endogenous regressor and one instrument.
 
 require(crs)
 
 ## Turn off screen I/O for crs()
 
-opts <- list("DISPLAY_DEGREE"=0)
+opts <- list("MAX_BB_EVAL"=10000,
+             "EPSILON"=.Machine$double.eps,
+             "INITIAL_MESH_SIZE"="r1.0e-01",
+             "MIN_MESH_SIZE"=sqrt(.Machine$double.eps),
+             "MIN_POLL_SIZE"=sqrt(.Machine$double.eps),
+             "DISPLAY_DEGREE"=0)
 
 ## This illustration was made possible by Samuele Centorrino
 ## <samuele.centorrino@univ-tlse1.fr>
 
 set.seed(42)
+
+## Interactively request number of observations, the method, whether
+## to do NOMAD or exhaustive search, and if NOMAD the number of
+## multistarts
+
 n <- as.numeric(readline(prompt="Input the number of observations desired: "))
 method <- as.numeric(readline(prompt="Input the method (0=Landweber-Fridman, 1=Tikhonov): "))
 method <- ifelse(method==0,"Landweber-Fridman","Tikhonov")
-nmulti <- as.numeric(readline(prompt="Input the number of multistarts desired (e.g. 10): "))
+cv <- as.numeric(readline(prompt="Input the cv method (0=nomad, 1=exhaustive): "))
+cv <- ifelse(cv==0,"nomad","exhaustive")
+if(cv=="nomad") nmulti <- as.numeric(readline(prompt="Input the number of multistarts desired (e.g. 10): "))
 
 v  <- rnorm(n,mean=0,sd=.27)
 eps <- rnorm(n,mean=0,sd=0.05)
@@ -22,7 +34,7 @@ u <- -0.5*v + eps
 w <- rnorm(n,mean=0,sd=1)
 z <- 0.2*w + v
 
-## In Darolles et al (2011) there exist two DGPs. The first is
+## In Darolles et al (2011) there exist two DGPs. The first is`a
 ## phi(z)=z^2.
 
 phi <- function(z) { z^2 }
@@ -35,12 +47,12 @@ y <- phi(z) + u
 
 evaldata <- data.frame(z=sort(z))
 
-model.iv <- crsiv(y=y,z=z,w=w,nmulti=nmulti,method=method)
+model.iv <- crsiv(y=y,z=z,w=w,cv=cv,nmulti=nmulti,method=method)
 phihat.iv <- predict(model.iv,newdata=evaldata)
 
-## Now the non-iv regression spline estimator of E(y|z)
+## Now the non-iv regression spline estimator of E(y|z)`a
 
-model.noniv <- crs(y~z,nmulti=nmulti,opts=opts)
+model.noniv <- crs(y~z,cv=cv,nmulti=nmulti,opts=opts)
 crs.mean <- predict(model.noniv,newdata=evaldata)
 
 ## For the plots, restrict focal attention to the bulk of the data
@@ -87,4 +99,3 @@ legend(x="top",inset=c(.01,.01),
        lty=c(1,2,4),
        col=c("black","blue","red"),
        lwd=c(1,2,2))
-

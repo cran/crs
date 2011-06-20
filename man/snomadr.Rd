@@ -5,26 +5,32 @@ R interface to NOMAD
 }
 \description{
 \code{snomadr} is an R interface to NOMAD (Nonsmooth Optimization by
-Mesh Adaptive Direct Search), an open source software C++ implementation
-of the Mesh Adaptive Direct Search (Mads) algorithm designed for
+Mesh Adaptive Direct Search, Abramson, Audet, Couture and Le Digabel
+(2011)), an open source software C++ implementation of the Mesh Adaptive
+Direct Search (MADS, Le Digabel (2011)) algorithm designed for
 constrained optimization of blackbox functions.
 
 NOMAD is designed to find (local) solutions of mathematical optimization
 problems of the form
 
+  \preformatted{
    min     f(x)
 x in R^n
 
 s.t.       g(x) <= 0 
            x_L <=  x   <= x_U
+}           
+           
+where \eqn{f(x)\colon R^n \to R^k}{f(x): R^n --> R^k} is the objective
+function, and \eqn{g(x)\colon R^n \to R^m}{g(x): R^n --> R^m} are
+the constraint functions. The vectors \eqn{x_L}{x_L} and \eqn{x_U}{x_U}
+are the bounds on the variables \eqn{x}. The functions \eqn{f(x)} and
+\eqn{g(x)} can be nonlinear and nonconvex. The variables can be integer,
+continuous real number, binary, and categorical.
 
-where f(x): R^n --> R^k is the objective function, and g(x): R^n --> R^m
-are the constraint functions. The vectors x_L and x_U are the bounds on
-the variables x. The functions f(x) and g(x) can be nonlinear and
-nonconvex. The variables can be integer, continuous real number, binary,
-and categorical. Kindly see
-\url{http://www.gerad.ca/nomad/Project/Home.html} and the references
-below for details.
+Kindly see \url{http://www.gerad.ca/nomad/Project/Home.html} and the
+references below for details.
+
 }
 
 \usage{
@@ -35,70 +41,127 @@ snomadr(eval.f,
         x0 = NULL, 
         lb = NULL, 
         ub = NULL, 
-        nmulti = 0, 
+        nmulti = 0,
+        random.seed = 0,
         opts = list(),
         print.output = TRUE, 
+        information = list(), 
         snomadr.environment = new.env(), 
         ... ) 
 }
 
-%- maybe also 'usage' for other objects documented here.
 \arguments{
     \item{eval.f}{
-        function that returns the value of the objective function.
+        function that returns the value of the objective function
     }
     \item{n}{ 
-        the number of variables.
+        the number of variables
     }
 
     \item{bbin}{
-        types of variables. 0:CONTINUOUS,  1:INTEGER,  2:CATEGORICAL, 3:BINARY.
-    }
+      types of variables. Variable types are 0 (CONTINUOUS), 1
+        (INTEGER), 2 (CATEGORICAL), 3 (BINARY)
+      }
     
     \item{bbout}{
-      types of output of eval.f.  See the NOMAD User Guide
-      \url{http://www.gerad.ca/NOMAD/Downloads/user_guide.pdf}.
+      types of output of \code{eval.f}.  See the NOMAD User Guide
+      \url{http://www.gerad.ca/NOMAD/Downloads/user_guide.pdf}
     }
     
     \item{x0}{
       vector with starting values for the optimization. If it is
-        provided and nmulti is bigger than 1, x0 will be the first
-        inital point for multiple initial points.
+        provided and nmulti is bigger than 1, \code{x0} will be the first
+        initial point for multiple initial points
       }
     \item{lb}{
-        vector with lower bounds of the controls (use -1.0e19 for controls without lower bound).
+        vector with lower bounds of the controls (use -1.0e19 for controls without lower bound)
     }
     \item{ub}{
-        vector with upper bounds of the controls (use  1.0e19 for controls without upper bound).
+        vector with upper bounds of the controls (use  1.0e19 for controls without upper bound)
     }
     \item{nmulti}{
-      when it is missing, or it is equal to 0 and x0 is provided,
+      when it is missing, or it is equal to 0 and \code{x0} is provided,
         \code{snomadRSolve} will be called to solve the problem. Otherwise,
-        \code{smultinomadRSolve} will be called.
+        \code{smultinomadRSolve} will be called
+      }
+    \item{random.seed}{
+      when it is not missing and not equal to 0, the initial points  will 
+      be generated using this seed when \code{nmulti > 0}
       }
     \item{opts}{
       list of options for NOMAD, see the NOMAD user guide
       \url{http://www.gerad.ca/NOMAD/Downloads/user_guide.pdf}.  Options
       can also be set by nomad.opt which should be in the folder where R
-      (\code{sonmadr}) is executed.
-    }
+      (\code{snomadr}) is executed. Options that affect the solution and
+      their defaults and some potential values are
+      
+      \code{"MAX_BB_EVAL"=10000}
+
+      \code{"INITIAL_MESH_SIZE"=1}
+
+      \code{"MIN_MESH_SIZE"="r1.0e-10"}
+      
+      \code{"MIN_POLL_SIZE"="r1.0e-10"}
+
+      Note that the \code{"r..."} denotes relative measurement (relative
+      to \code{lb} and \code{ub})
+
+      Note that decreasing the maximum number of black box evaluations
+      (\code{"MAX_BB_EVAL"}) will terminate search sooner and may result
+      in a less accurate solution. For complicated problems you may want
+      to increase this value. When experimenting it is desirable to set
+      \code{"DISPLAY_DEGREE"=1} (or a larger integer) to get some sense
+      for how the algorithm is progressing
+
+      }
 
     \item{print.output}{
-      when it is FALSE, no output from \code{snomadr} is displayed on
-      the screen. If DISPLAY_DEGREE=0, the
-        option of NOMAD, there will be no output from NOMAD. Higher
-      integer values provide successively more detail.
-      }
+      when FALSE, no output from \code{snomadr} is displayed on
+      the screen. If \code{"DISPLAY_DEGREE"=0,} the option of NOMAD, there will
+      be no output from NOMAD. Higher integer values provide
+      successively more detail
+    }
+
+    \item{information}{
+      is a list. \code{snomadr} will call \code{snomadRInfo} to return
+      the information about NOMAD according to the values of \code{"info"},
+      \code{"version"} and \code{"help"}.
+
+      \code{"info"="-i"}: display the usage and copyright of NOMAD. 
+
+      \code{"version"="-v"}: display the version of NOMAD you are using.
+
+      \code{"help"="-h"}: display all options. You also can display a specific option, 
+      for example, \code{"help"="-h x0"},  this will tell you how to set \code{x0}.
+    }
 
     \item{snomadr.environment}{
         environment that is used to evaluate the functions. Use this to pass 
-        additional data or parameters to a function.
+        additional data or parameters to a function
     }
     \item{...}{
       arguments that will be passed to the user-defined objective and
-      constraints functions. See the examples below.
+      constraints functions. See the examples below
     }
-}
+  }
+
+  \details{
+    \code{snomadr} is used in the \pkg{crs} package to numerically
+    minimize an objective function with respect to the spline degree,
+    number of knots, and optionally the kernel bandwidths when using
+    \code{\link{crs}} with the option \code{cv="nomad"} (default). See
+    \code{\link{frscvNOMAD}} and \code{\link{krscvNOMAD}} for the
+    functions called when \code{cv="nomad"} while using
+    \code{\link{crs}}.
+
+    However, note that for simple problems involving one predictor
+    exhaustive search may be faster and more accurate, so bear in mind
+    that \code{cv="exhaustive"} can be useful when using
+    \code{\link{crs}}. Naturally, exhaustive search is also useful for
+    verifying solutions returned by \code{snomadr}. See
+    \code{\link{frscv}} and \code{\link{krscv}} for the functions called
+    when \code{cv="exhaustive"} while using \code{\link{crs}}.
+  }
 \value{
     The return value contains a list with the inputs, and additional elements
     \item{call}{the call that was made to solve}
@@ -110,27 +173,36 @@ snomadr(eval.f,
     \item{solution}{optimal value of the controls}
 }
 \references{
-  
   M.A. Abramson, C. Audet, G. Couture, J.E. Dennis, Jr., and S. Le
-  Digabel. The NOMAD
-  project. \url{http://www.gerad.ca/nomad/Project/Home.html}.
+  Digabel (2011), \dQuote{The NOMAD project}. Software available at
+  http://www.gerad.ca/nomad.
 
-  S. Le Digabel. Algorithm 909: \dQuote{NOMAD: Nonlinear optimization
-  with the MADS algorithm. ACM Transactions on Mathematical Software},
-  37(4):44:1-44:15, 2011.
-    
+  S. Le Digabel (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
+  optimization with the MADS algorithm}. ACM Transactions on
+  Mathematical Software, 37(4):44:1-44:15.
+  
 }
 \author{
   Zhenghua Nie <niez@mcmaster.ca>
 }
 \seealso{
-    \code{\link{optim}}
-    \code{\link{nlm}}
-    \code{\link{nlminb}}
+    \code{\link{optim}}, \code{\link{nlm}}, \code{\link{nlminb}}
 }
 \examples{
-# This is the example found in
-#  NOMAD/examples/basic/library/single_obj/basic_lib.cpp
+## List all options
+snomadr(information=list("help"="-h"))
+
+## Print given option,  for example,  MESH_SIZE
+snomadr(information=list("help"="-h MESH_SIZE"))
+
+## Print the version of NOMAD
+snomadr(information=list("version"="-v"))
+
+## Print usage and copyright
+snomadr(information=list("info"="-i"))
+
+## This is the example found in
+## NOMAD/examples/basic/library/single_obj/basic_lib.cpp
 
 eval.f <- function ( x ) {
 
@@ -146,75 +218,78 @@ eval.f <- function ( x ) {
     return ( as.double(f) );
 }
 
-# initial value
+## Initial values
 x0 <- rep(0.0, 5 )
 
 bbin <-c(1, 1, 1, 1, 1)
-#bounds
+## Bounds
 lb <- rep(-6.0,5 )
 ub <- c(5.0, 6.0, 7.0, 1000000, 100000)
 
 bbout <-c(0, 2, 1)
-#options
-opts <-list("MAX_BB_EVAL"=500, "MIN_MESH_SIZE"=0.001, "INITIAL_MESH_SIZE"="0.1", "MIN_POLL_SIZE"=0.0001)
+## Options
+opts <-list("MAX_BB_EVAL"=500,
+            "MIN_MESH_SIZE"=0.001,
+            "INITIAL_MESH_SIZE"=0.1,
+            "MIN_POLL_SIZE"=0.0001)
 
 snomadr(eval.f=eval.f,n=5,  x0=x0, bbin=bbin, bbout=bbout, lb=lb, ub=ub, opts=opts)
 
 
-# how to transfer other parameters into eval.f
-#
-# First example: supply additional arguments in user-defined functions
-#
+## How to transfer other parameters into eval.f
+##
+## First example: supply additional arguments in user-defined functions
+##
 
-# objective function and gradient in terms of parameters
+## objective function and gradient in terms of parameters
 eval.f.ex1 <- function(x, params) { 
     return( params[1]*x^2 + params[2]*x + params[3] ) 
 }
 
-# define parameters that we want to use
+## Define parameters that we want to use
 params <- c(1,2,3)
 
-# define initial value of the optimzation problem
+## Define initial value of the optimization problem
 x0 <- 0
 
-# solve using snomadr 
+## solve using snomadr 
 snomadr( n          =1, 
         x0          = x0, 
         eval.f      = eval.f.ex1, 
         params      = params )
 
 
-#
-# Second example: define an environment that contains extra parameters
-#
+##
+## Second example: define an environment that contains extra parameters
+##
 
-# objective function and gradient in terms of parameters
-# without supplying params as an argument
+## Objective function and gradient in terms of parameters
+## without supplying params as an argument
 eval.f.ex2 <- function(x) { 
     return( params[1]*x^2 + params[2]*x + params[3] ) 
 }
 
-# define initial value of the optimzation problem
+## Define initial value of the optimization problem
 x0 <- 0
 
-# define a new environment that contains params
+## Define a new environment that contains params
 auxdata        <- new.env()
 auxdata$params <- c(1,2,3)
 
-# pass the environment that should be used to evaluate functions to snomadr 
-snomadr( n                 =1, 
+## pass The environment that should be used to evaluate functions to snomadr 
+snomadr(n                  =1, 
         x0                 = x0, 
         eval.f             = eval.f.ex2, 
         snomadr.environment = auxdata )
 
-# solve using algebra
+## Solve using algebra
 cat( paste( "Minimizing f(x) = ax^2 + bx + c\n" ) )
 cat( paste( "Optimal value of control is -b/(2a) = ", -params[2]/(2*params[1]), "\n" ) )
 cat( paste( "With value of the objective function f(-b/(2a)) = ", eval.f.ex1( -params[2]/(2*params[1]), params ), "\n" ) )
 
 
-# The following example is NOMAD/examples/advanced/multi_start/multi.cpp
-# This will call smultinomadRSolve to resolve the problem.  
+## The following example is NOMAD/examples/advanced/multi_start/multi.cpp
+## This will call smultinomadRSolve to resolve the problem.  
 eval.f.ex1 <- function(x, params) { 
     M<-as.numeric(params$M)
     NBC<-as.numeric(params$NBC)
@@ -268,7 +343,7 @@ eval.f.ex1 <- function(x, params) {
     return(as.numeric(f) ) 
 }
 
-# define parameters that we want to use
+## Define parameters that we want to use
 params<-list()
 NBC <- 5
 M <- 2
@@ -285,9 +360,9 @@ eval.f.ex1(x0, params)
 bbout<-c(2, 2, 0)
 nmulti=5
 bbin<-rep(0, n)
-# define initial value of the optimzation problem
+## Define initial value of the optimization problem
 
-# solve using snomadRSolve
+## Solve using snomadRSolve
 snomadr(n            = as.integer(n), 
         x0           = x0, 
         eval.f       = eval.f.ex1, 
@@ -297,13 +372,13 @@ snomadr(n            = as.integer(n),
         ub           = ub, 
         params       = params )
 
-# solve using smultinomadRSolve, if x0 is provided,  x0 will
-# be the first initial point,  otherwise,  the program will
-# check best_x.txt,  if it exists,  it will be read in as
-# the first initial point. Other initial points will be
-# generated by uniform distribution.
-# nmulti represents the number of mads will run.
-#
+## Solve using smultinomadRSolve, if x0 is provided,  x0 will
+## be the first initial point,  otherwise,  the program will
+## check best_x.txt,  if it exists,  it will be read in as
+## the first initial point. Other initial points will be
+## generated by uniform distribution.
+## nmulti represents the number of mads will run.
+##
 snomadr(n            = as.integer(n), 
         eval.f       = eval.f.ex1, 
         bbin         = bbin, 
@@ -313,11 +388,7 @@ snomadr(n            = as.integer(n),
         nmulti = as.integer(nmulti), 
         print.output = TRUE, 
         params       = params )
-
-
 }
-% Add one or more standard keywords, see file 'KEYWORDS' in the
-% R documentation directory.
 \keyword{ optimize }
 \keyword{ interface }
 

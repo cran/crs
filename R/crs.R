@@ -340,8 +340,13 @@ crs.formula <- function(formula,
                         data.return=FALSE,
                         prune=FALSE,
 												restarts=0,
-												opts=list("MAX_BB_EVAL"=500,"MIN_MESH_SIZE"="r1.0e-10","INITIAL_MESH_SIZE"="r1.0e-02","MIN_POLL_SIZE"="r1.0e-10"),
-												nmulti=0, 
+                        random.seed=42,
+                        opts=list("MAX_BB_EVAL"=10000,
+                                  "EPSILON"=.Machine$double.eps,
+                                  "INITIAL_MESH_SIZE"="r1.0e-01",
+                                  "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+                                  "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep="")),
+												nmulti=5,
 												...) {
 
   cv <- match.arg(cv)  
@@ -419,6 +424,7 @@ crs.formula <- function(formula,
 															degree=degree,
 															segments=segments, 
 															include=include, 
+                              random.seed=random.seed,
 															opts=opts,
 															nmulti=nmulti)
 
@@ -472,6 +478,7 @@ crs.formula <- function(formula,
                               segments=segments,
 															lambda=lambda, 
                               restarts=restarts, 
+                              random.seed=random.seed,
                               opts=opts,
                               nmulti=nmulti)
       

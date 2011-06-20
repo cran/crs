@@ -1,3 +1,30 @@
+Changes from Version 0.14.8 to 0.14.9 [20-Jun-2011]
+
+* Cleaned up issues for creating binary for windows
+
+* Setting seed in crs -> frscvNOMAD/krscvNOMAD fed to snomadr.cpp via
+  snomadr.R for starting points when nmulti > 0
+
+* frscvNOMAD and krscvNOMAD will check the number of times the
+  objective function, compare with MAX_BB_EVAL and give the warning if
+  the maximum is reached (nmulti * MAX_BB_EVAL - note this will only
+  detect the case where every restart hit MAX_BB_EVAL)
+
+* Increased default MAX_BB_EVAL from 500 to 10000 (makes a difference
+  for difficult problems) and modified default EPSILON in NOMAD along
+  with other parameters (MIN_MESH_SIZE, MIN_POLL_SIZE) to reflect
+  actual machine precision (using R's .Machine$double.eps where NOMAD
+  fixed EPSILON at 1e-13)
+
+* Zhenghua added help functionality for retrieving help via snomadr
+
+* Now default number of restarts in crs is 5 (zero is not reliable
+  and I want sensible defaults in this package - higher is better but
+  for many problems this ought to suffice)
+
+* Corrected glitches in interactive demos where options were not being
+  passed, updated docs to reflect demos
+
 Changes from Version 0.14.7 to 0.14.8 [10-Jun-2011]
 
 * crsiv now returns a crs model object that supports residuals,

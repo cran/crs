@@ -1,8 +1,46 @@
+June 20, 2011
+
+Success with building for windows!
+
+June 19, 2011
+
+Rude email from Ripley about not building on windows. Decided to
+leverage the Dell netbook for this job.
+
+June 18 2011, enroute from Zurich to Toronto
+
+Lots of work on the demos, rgl, documents, and some code. Much tighter
+now (docs consistent with code), better demos. The week in Uppsala was
+devoted to the course and this package with perhaps 20-30 hours in
+total devoted. The remaining issues concern building on windows... we
+may be able to deal with this this week if all goes well, then two
+articles, R journal and JSS and then the np function...
+
+June 13 2011, Uppsala
+
+So, the MESH parameters affect only continuous search since minimum
+mesh for discrete is typically 1.
+
+The parameters that affect discrete search are MAX_BB_EVAL and
+INITIAL_MESH_SIZE.
+
+June 11 2011, Uppsala
+
+Looked deeper into which parameter value settings are driving
+things. Noted that MAX_BB_EVAL was consistently being hit and search
+terminating for the wage1 data set. Increased this to 10000 and it is
+no longer binding... played with other parameter value settings and
+modified INITIAL_MESH_SIZE but edited snomadr.Rd with some common
+sense advice for setting values in crs
+
+Also, MIN_POLL_SIZE is binding for mcycle (default is none?)
+
 June 9 2011
 
-Brain flash about using the lambda approach and spitting a crs model
-with additional components in crsiv... guess I might be able to use
-names of variables taken from the data frames rather than x1, x2 etc.
+En route to Uppsala and had a brain flash about using the lambda
+approach and spitting a crs model with additional components in
+crsiv... guess I might be able to use names of variables taken from
+the data frames rather than x1, x2 etc.
 
 June 7 2011
 
