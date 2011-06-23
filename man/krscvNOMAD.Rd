@@ -22,7 +22,6 @@ krscvNOMAD(xz,
            degree.min = 0, 
            segments.min = 1, 
            kernel.type = c("nominal","ordinal"),
-           restarts = 0,
            complexity = c("degree-knots","degree","knots"),
            knots = c("quantiles","uniform"),
            basis = c("additive","tensor","auto"),
@@ -63,11 +62,6 @@ krscvNOMAD(xz,
     (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
   }
   
-\item{restarts}{
-    number of times to restart search from different initial random
-    values (default \code{restarts=0})
-  }
-
   \item{complexity}{a character string (default
   \code{complexity="degree-knots"}) indicating whether model `complexity' is
   determined by the degree of the spline or by the number of segments
@@ -145,8 +139,8 @@ krscvNOMAD(xz,
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
-  Scientific Library and the \code{\link{tensor.prod.model.matrix}}
-  function.
+  Scientific Library (\url{http://www.gnu.org/software/gsl/}) and the
+  \code{\link{tensor.prod.model.matrix}} function.
 
   For the discrete predictors the product kernel function is of the
   \sQuote{Li-Racine} type (see Li and Racine (2007) for details).
@@ -233,7 +227,7 @@ krscvNOMAD(xz,
 \examples{
 set.seed(123)
 ## Simulated data
-n <- 10000
+n <- 1000
 
 x <- runif(n)
 z <- round(runif(n,min=-0.5,max=1.5))

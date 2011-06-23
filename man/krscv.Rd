@@ -59,9 +59,11 @@ krscv(xz,
     (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
   }
   
-\item{restarts}{
-    number of times to restart search from different initial random
-    values (default \code{restarts=0})
+  \item{restarts}{
+    number of times to restart \code{\link{optim}} from different initial
+    random values (default \code{restarts=0}) when searching for optimal
+    bandwidths for the categorical predictors for each unique \code{K}
+    combination (i.e.\ \code{degree}/\code{segments})
   }
 
   \item{complexity}{a character string (default
@@ -123,25 +125,26 @@ krscv(xz,
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
-  Scientific Library and the \code{\link{tensor.prod.model.matrix}}
-  function.
+  Scientific Library (\url{http://www.gnu.org/software/gsl/}) and the
+  \code{\link{tensor.prod.model.matrix}} function.
 
   For the discrete predictors the product kernel function is of the
   \sQuote{Li-Racine} type (see Li and Racine (2007) for details).
   
-  For each unique combination of \code{degree} and \code{sector},
+  For each unique combination of \code{degree} and \code{segment},
   numerical search for the bandwidth vector \code{lambda} is undertaken
   using \code{\link{optim}} and the box-constrained \code{L-BFGS-B}
   method (see \code{\link{optim}} for details). The user may restart the
-  algorithm as many times as desired via the \code{restarts}
-  argument. The approach ascends from \code{K=0} through
-  \code{degree.max} and for each value of \code{K} searches for the
-  optimal bandwidths for this value of \code{K}. After the most complex
-  model has been searched then the optimal \code{K}/\code{lambda}
-  combination is selected. If any element of the optimal \code{K} vector
-  coincides with \code{degree.max} a warning is produced and the user
-  ought to restart their search with a larger value of
-  \code{degree.max}.
+  \code{\link{optim}} algorithm as many times as desired via the
+  \code{restarts} argument. The approach ascends from \code{K=0} through
+  \code{degree.max}/\code{segments.max} and for each value of \code{K}
+  searches for the optimal bandwidths for this value of \code{K}. After
+  the most complex model has been searched then the optimal
+  \code{K}/\code{lambda} combination is selected. If any element of the
+  optimal \code{K} vector coincides with
+  \code{degree.max}/\code{segments.max} a warning is produced and the
+  user ought to restart their search with a larger value of
+  \code{degree.max}/\code{segments.max}.
 
   Note that, since the approach is built on top of the regression spline
   for each unique \code{z} combination, the splines must be estimable
@@ -203,7 +206,7 @@ krscv(xz,
 \examples{
 set.seed(123)
 ## Simulated data
-n <- 10000
+n <- 1000
 
 x <- runif(n)
 z <- round(runif(n,min=-0.5,max=1.5))

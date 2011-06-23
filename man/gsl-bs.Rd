@@ -5,7 +5,8 @@
 \title{GSL (GNU Scientific Library) B-spline/B-spline Derivatives}
 
 \description{ \code{gsl.bs} generates the B-spline basis matrix for a
-  polynomial spline }
+  polynomial spline and (optionally) the B-spline basis matrix
+  derivative of a specified order with respect to each predictor }
 
 \usage{
 gsl.bs(\dots)
@@ -64,7 +65,10 @@ basis; default is \sQuote{FALSE} }
   \sQuote{c(length(x), degree)}.
 
   A primary use is in modelling formulas to directly specify a piecewise
-     polynomial term in a model.  }
+  polynomial term in a model. See \url{http://www.gnu.org/software/gsl/}
+  for further details.
+  
+}
   
 \references{
 

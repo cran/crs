@@ -98,14 +98,15 @@ frscv(xz,
   estimate of a one (1) dimensional dependent variable on an
   \code{r}-dimensional vector of continuous and nominal/ordinal
   (\code{\link{factor}}/\code{\link{ordered}}) predictors. The optimal
-  \code{K}/\code{I} combination is returned along with other results
-  (see below for return values).
+  \code{K}/\code{I} combination (i.e.\
+  \code{degree}/\code{segments}/\code{I}) is returned along with other
+  results (see below for return values).
 
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
-  Scientific Library and the \code{\link{tensor.prod.model.matrix}}
-  function.
+  Scientific Library (\url{http://www.gnu.org/software/gsl/}) and the
+  \code{\link{tensor.prod.model.matrix}} function.
 
   For the nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
   predictors the regression spline model uses indicator basis functions.
@@ -175,7 +176,7 @@ frscv(xz,
 \examples{
 set.seed(123)
 ## Simulated data
-n <- 10000
+n <- 1000
 
 x <- runif(n)
 z <- round(runif(n,min=-0.5,max=1.5))
