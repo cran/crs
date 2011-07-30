@@ -1,4 +1,3 @@
-% $ID$
 \name{frscv}
 \alias{frscv}
 
@@ -23,7 +22,7 @@ frscv(xz,
       segments.min=1, 
       complexity = c("degree-knots","degree","knots"),
       knots = c("quantiles","uniform"),
-      basis = c("additive","tensor","auto"),
+      basis = c("additive","tensor","glp","auto"),
       cv.func = c("cv.ls","cv.gcv","cv.aic"),
       degree = degree,
       segments = segments)
@@ -66,14 +65,15 @@ frscv(xz,
 
 \item{basis}{ a character string (default \code{basis="additive"})
     indicating whether the additive or tensor product B-spline basis
-    matrix for a multivariate polynomial spline should be used. Note
-    this can be automatically determined by cross-validation if
-    \code{cv=TRUE} and \code{basis="auto"}, and is an \sQuote{all or
-    none} proposition (i.e. interaction terms for all predictors or for
-    no predictors given the nature of \sQuote{tensor products}). Note
-    also that if there is only one predictor this defaults to
-    \code{basis="additive"} to avoid unnecessary computation as the
-    spline bases are equivalent in this case }
+    matrix for a multivariate polynomial spline or generalized B-spline
+    polynomial basis should be used. Note this can be automatically
+    determined by cross-validation if \code{cv=TRUE} and
+    \code{basis="auto"}, and is an \sQuote{all or none} proposition
+    (i.e. interaction terms for all predictors or for no predictors
+    given the nature of \sQuote{tensor products}). Note also that if
+    there is only one predictor this defaults to \code{basis="additive"}
+    to avoid unnecessary computation as the spline bases are equivalent
+    in this case }
 
   \item{cv.func}{a character string (default \code{cv.func="cv.ls"})
     indicating which method to use to select smoothing
@@ -94,8 +94,8 @@ frscv(xz,
 
 \details{
 
-  \code{frscv} computes cross-validation for a regression spline
-  estimate of a one (1) dimensional dependent variable on an
+  \code{frscv} computes exhaustive cross-validation for a regression
+  spline estimate of a one (1) dimensional dependent variable on an
   \code{r}-dimensional vector of continuous and nominal/ordinal
   (\code{\link{factor}}/\code{\link{ordered}}) predictors. The optimal
   \code{K}/\code{I} combination (i.e.\
@@ -111,13 +111,6 @@ frscv(xz,
   For the nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}})
   predictors the regression spline model uses indicator basis functions.
 
-  Note that, since the approach is built on top of the regression spline
-  for each unique nominal/ordinal
-  (\code{\link{factor}}/\code{\link{ordered}}) combination, the splines
-  must be estimable for every such unique combination. When this is not
-  the case the user must combine data in a manner such that this is
-  achieved.
-  
 }
 
 \value{
@@ -174,7 +167,7 @@ frscv(xz,
 }
 
 \examples{
-set.seed(123)
+set.seed(42)
 ## Simulated data
 n <- 1000
 

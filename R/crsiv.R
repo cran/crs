@@ -330,8 +330,8 @@ crsiv <- function(y,
     console <- printClear(console)
     console <- printPop(console)
     
-    if((alpha-alpha.min)/alpha.min < 0.01) warning(paste("Tikhonov parameter alpha (",formatC(alpha,digits=4,format="f"),") is close to the search minimum (",alpha.min,")",sep=""))
-    if((alpha.max-alpha)/alpha.max < 0.01) warning(paste("Tikhonov parameter alpha (",formatC(alpha,digits=4,format="f"),") is close to the search maximum (",alpha.max,")",sep=""))
+    if((alpha-alpha.min)/alpha.min < 0.01) warning(paste(" Tikhonov parameter alpha (",formatC(alpha,digits=4,format="f"),") is close to the search minimum (",alpha.min,")",sep=""))
+    if((alpha.max-alpha)/alpha.max < 0.01) warning(paste(" Tikhonov parameter alpha (",formatC(alpha,digits=4,format="f"),") is close to the search maximum (",alpha.max,")",sep=""))
     
     ## phi.0 is the conditional mean model. We compute lambda =
     ## fitted(phi.0)-phihat then transform y via
@@ -354,7 +354,6 @@ crsiv <- function(y,
                  include=phi.0$include,
                  kernel=phi.0$kernel, 
                  basis=phi.0$basis,
-                 kernel.type=phi.0$kernel.type,
                  knots=phi.0$knots,
                  deriv=deriv,
                  data=traindata)
@@ -427,7 +426,6 @@ crsiv <- function(y,
                         include=model.E.phi.w$include,
                         kernel=model.E.phi.w$kernel, 
                         basis=model.E.phi.w$basis,
-                        kernel.type=model.E.phi.w$kernel.type,
                         knots=model.E.phi.w$knots,
                         data=traindata)
       
@@ -471,7 +469,6 @@ crsiv <- function(y,
                  include=phi.0$include,
                  kernel=phi.0$kernel, 
                  basis=phi.0$basis,
-                 kernel.type=phi.0$kernel.type,
                  knots=phi.0$knots,
                  deriv=deriv,
                  data=traindata)
@@ -484,7 +481,7 @@ crsiv <- function(y,
     console <- printClear(console)
     console <- printPop(console)
 
-    if(j == iterate.max) warning("iterate.max reached: increase iterate.max or inspect norm.stop vector")
+    if(j == iterate.max) warning(" iterate.max reached: increase iterate.max or inspect norm.stop vector")
 
     return(model)
 

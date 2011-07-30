@@ -1,3 +1,55 @@
+## This function tests for the maximum well-conditioned spline degree.
+
+## Note that increasing the number of breaks, other things equal,
+## results in a better-conditioned matrix. Hence we ignore nbreak and
+## set it to its minimum (2)
+
+check.max.spline.degree <- function(xdat=NULL,degree=NULL,issue.warning=FALSE) {
+
+  if(is.null(xdat)) stop(" xdat must be provided")
+  if(is.null(degree)) stop(" degree vector must be provided")
+
+  xdat <- as.data.frame(xdat)
+
+  if(missing(degree)) stop(" degree vector must be provided")
+
+  ill.conditioned <- FALSE
+
+  xdat.numeric <- sapply(1:ncol(xdat),function(i){is.numeric(xdat[,i])})
+  numeric.index <- which(xdat.numeric==TRUE)  
+  num.numeric <- sum(sapply(1:NCOL(xdat),function(i){is.numeric(xdat[,i])})==TRUE)
+  d <- numeric(num.numeric)
+
+  if(num.numeric > 0) {
+  
+    for(i in 1:num.numeric) {
+      if(degree[i]>0) {
+        X <- gsl.bs(xdat[,numeric.index[i]],degree=degree[i],nbreak=2)
+        d[i] <- degree[i]
+        if(rcond(t(X)%*%X)<.Machine$double.eps) {
+          for(j in 1:degree[i]) {
+            d[i] <- j
+            X <- gsl.bs(xdat[,numeric.index[i]],degree=d[i],nbreak=2)
+            if(rcond(t(X)%*%X)<.Machine$double.eps) {
+              d[i] <- j-1
+              break()
+            }
+          }
+        }
+        if(d[i] < degree[i]) {
+          if(issue.warning) warning(paste("\r Predictor ",i," B-spline basis is ill-conditioned beyond degree ",d[i],": see note in ?npglpreg",sep=""),immediate.=TRUE)
+          ill.conditioned <- TRUE
+        }
+      }
+    }
+
+  }
+
+  attr(ill.conditioned, "degree.max.vec") <- d
+  return(ill.conditioned)
+
+}
+
 ## Utility function for dimension of par(mfrow=c(,)) for multiple
 ## plots on the same device
 
@@ -5,6 +57,11 @@ dim.plot = function(x) {
   a1 = round(sqrt(4.0/3.0*x))
   a2 = ceiling(x/a1)
   c(a1,a2)
+}
+
+succeedWithResponse <- function(tt, frame){
+  !any(class(try(eval(expr = attr(tt, "variables"),
+                      envir = frame, encl = NULL), silen = TRUE)) == "try-error")
 }
 
 ## Utility function to divide explanatory variables into
@@ -31,7 +88,11 @@ splitFrame <- function(xz, factor.to.numeric=FALSE) {
 
   xnames <- xznames[!IND]
 
+  is.ordered.z <- NULL
+  
   if(any(IND)) {
+    is.ordered.z <- logical()
+    for(i in 1:NCOL(xz[,IND,drop=FALSE])) is.ordered.z[i] <- is.ordered((xz[,IND,drop=FALSE])[,i])
     if(!factor.to.numeric) {
       z <- data.frame(xz[,IND,drop=FALSE])
     } else {
@@ -42,7 +103,10 @@ splitFrame <- function(xz, factor.to.numeric=FALSE) {
       ## character strings it produces a warning message. No idea how
       ## to test for this so dropping for the moment. Will affect
       ## ordered types.
-      for(i in 1:NCOL(xz[,IND,drop=FALSE])) z[,i] <- as.numeric((xz[,IND,drop=FALSE])[,i])
+      for(i in 1:NCOL(xz[,IND,drop=FALSE])) {
+        suppressWarnings(z[,i] <- as.numeric(levels((xz[,IND,drop=FALSE])[,i]))[(xz[,IND,drop=FALSE])[,i]])
+        if(any(is.na(z[,i]))) z[,i] <- as.numeric((xz[,IND,drop=FALSE])[,i])
+      }
     }
     ## Don't assign names when factor.to.numeric is TRUE (otherwise
     ## NAs populate matrix)
@@ -60,8 +124,21 @@ splitFrame <- function(xz, factor.to.numeric=FALSE) {
               xnames=xnames,
               z=z,
               num.z=num.z,
+              is.ordered.z=is.ordered.z,
               znames=znames))
   
+}
+
+trim.quantiles = function(dat, trim){
+  if (sign(trim) == sign(-1)){
+    trim = abs(trim)
+    tq = quantile(dat, probs = c(0.0, 0.0+trim, 1.0-trim,1.0))
+    tq = c(2.0*tq[1]-tq[2], 2.0*tq[4]-tq[3])
+  }
+  else {
+    tq = quantile(dat, probs = c(0.0+trim, 1.0-trim))
+  }
+  tq
 }
 
 uocquantile = function(x, prob) {

@@ -1,13 +1,18 @@
-## 3/6/2010, (C) Jeffrey S. Racine (racinej@mcmaster.ca).
-
 ## This function provides for a complete S3 implementation of
-##  regression splines with categorical factors using two approaches,
-##  (i) kernel smoothing, and (ii) indicator function
-##  bases. Cross-validation (leave-one-out) can be used to select (i)
-##  the degree and number of knots (`segments'+1) of the basis spline
-##  for each continuous predictor, (ii) bandwidth for each
-##  ordinal/nominal predictor, or (iii) whether or not to include each
-##  ordinal/nominal predictor's indicator basis.
+## regression splines with categorical factors using two approaches,
+## (i) kernel smoothing, and (ii) indicator function bases. Both
+## additive and tensor product bases are supported (default is
+## additive, but also see the option basis="auto" that computes both
+## and uses that with the smallest cross-validation
+## score). Cross-validation (leave-one-out, generalized, and the AIC_c
+## method of Hurvich, Simonoff, and Tsai (1998, JRSS B)) can be used
+## to select (i) the degree and number of knots (`segments'+1) of the
+## basis spline for each continuous predictor, (ii) bandwidth for each
+## ordinal/nominal predictor, or (iii) whether or not to include each
+## ordinal/nominal predictor's indicator basis. S3 methods include
+## fitted, predict, residuals, plot and so forth.
+
+## 2010 (C) Jeffrey S. Racine (racinej@mcmaster.ca).
 
 crs <- function(...) UseMethod("crs")
 
@@ -23,10 +28,9 @@ crsEst <- function(xz,
                    include=NULL,
                    kernel=TRUE,
                    lambda=NULL,
-                   kernel.type=c("nominal","ordinal"),
                    complexity=c("degree-knots","degree","knots"),
                    knots=c("quantiles","uniform"),
-                   basis=c("additive","tensor","auto"),
+                   basis=c("additive","tensor","glp","auto"),
                    deriv=0,
                    data.return=FALSE,
                    prune=FALSE,
@@ -34,7 +38,6 @@ crsEst <- function(xz,
   
   ## Take data frame xz and parse into factors (z) and numeric (x).
 
-  kernel.type <- match.arg(kernel.type)
   complexity <- match.arg(complexity)
   knots <- match.arg(knots)
   basis <- match.arg(basis)
@@ -50,6 +53,7 @@ crsEst <- function(xz,
   z <- xztmp$z
   znames <- xztmp$znames
   num.z <- xztmp$num.z
+  is.ordered.z <- xztmp$is.ordered.z
   ## The default is kernel==TRUE - this will throw an error with no
   ## categorical predictors so first check
   if(is.null(num.z) && kernel==TRUE) kernel <- FALSE
@@ -82,16 +86,20 @@ crsEst <- function(xz,
       m <- 1 ## num.x
       for(i in 1:ncol(xz)) {
         if(!is.factor(xz[,i])) {
-          tmp <- deriv.factor.spline(x=x,
-                                     y=y,
-                                     z=z,
-                                     K=cbind(degree,segments),
-                                     I=include,
-                                     knots=knots,
-                                     basis=basis,
-                                     deriv.index=m,
-                                     deriv=deriv,
-                                     prune.index=prune.index)
+          if(deriv <= degree[m]) {
+            tmp <- deriv.factor.spline(x=x,
+                                       y=y,
+                                       z=z,
+                                       K=cbind(degree,segments),
+                                       I=include,
+                                       knots=knots,
+                                       basis=basis,
+                                       deriv.index=m,
+                                       deriv=deriv,
+                                       prune.index=prune.index)
+          } else {
+            tmp <- matrix(0,length(y),3)
+          }
           deriv.mat[,i] <- tmp[,1]
           deriv.mat.lwr[,i] <- tmp[,2]
           deriv.mat.upr[,i] <- tmp[,3]
@@ -144,7 +152,7 @@ crsEst <- function(xz,
                                    z=z,
                                    K=cbind(degree,segments),
                                    lambda=lambda,
-                                   kernel.type=kernel.type,
+                                   is.ordered.z=is.ordered.z,
                                    knots=knots,
                                    basis=basis)
 
@@ -159,17 +167,20 @@ crsEst <- function(xz,
       m <- 1 ## num.x
       for(i in 1:ncol(xz)) {
         if(!is.factor(xz[,i])) {
-          tmp <- deriv.kernel.spline(x=x,
-                                     y=y,
-                                     z=z,
-                                     K=cbind(degree,segments),
-                                     lambda=lambda,
-                                     kernel.type=kernel.type,
-                                     knots=knots,
-                                     basis=basis,
-                                     deriv.index=m,
-                                     deriv=deriv)
-
+          if(deriv <= degree[m]) {
+            tmp <- deriv.kernel.spline(x=x,
+                                       y=y,
+                                       z=z,
+                                       K=cbind(degree,segments),
+                                       lambda=lambda,
+                                       is.ordered.z=is.ordered.z,
+                                       knots=knots,
+                                       basis=basis,
+                                       deriv.index=m,
+                                       deriv=deriv)
+          } else {
+            tmp <- matrix(0,length(y),3)
+          }
           deriv.mat[,i] <- tmp[,1]
           deriv.mat.lwr[,i] <- tmp[,2]
           deriv.mat.upr[,i] <- tmp[,3]
@@ -184,7 +195,7 @@ crsEst <- function(xz,
                                          z=z,
                                          K=cbind(degree,segments),
                                          lambda=lambda,
-                                         kernel.type=kernel.type,
+                                         is.ordered.z=is.ordered.z,
                                          knots=knots,
                                          basis=basis)$fitted.values
 
@@ -193,7 +204,7 @@ crsEst <- function(xz,
                                               z=z,
                                               K=cbind(degree,segments),
                                               lambda=lambda,
-                                              kernel.type=kernel.type,
+                                              is.ordered.z=is.ordered.z,
                                               xeval=x,
                                               zeval=ztmp,
                                               knots=knots,
@@ -235,6 +246,7 @@ crsEst <- function(xz,
               basis=basis,
               num.x=num.x,
               num.z=num.z,
+              is.ordered.z=is.ordered.z,
               xnames=xnames,
               znames=znames,
               deriv=deriv,
@@ -264,16 +276,14 @@ crs.default <- function(xz,
                         include=NULL,
                         kernel=TRUE,
                         lambda=NULL,
-                        kernel.type=c("nominal","ordinal"),
                         complexity=c("degree-knots","degree","knots"),
                         knots=c("quantiles","uniform"),
-                        basis=c("additive","tensor","auto"),
+                        basis=c("additive","tensor","glp","auto"),
                         deriv=0,
                         data.return=FALSE,
                         prune=FALSE,
                         ...) {
 
-  kernel.type <- match.arg(kernel.type)
   complexity <- match.arg(complexity)
   knots <- match.arg(knots)
   basis <- match.arg(basis)
@@ -287,7 +297,6 @@ crs.default <- function(xz,
                 include=include,
                 kernel=kernel,
                 lambda=lambda,
-                kernel.type=kernel.type,
                 complexity=complexity,
                 knots=knots,
                 basis=basis,
@@ -330,13 +339,13 @@ crs.formula <- function(formula,
                         degree.min=0, 
                         segments.min=1, 
                         cv=c("nomad","exhaustive","none"),
+                        cv.threshold=1000,
                         cv.func=c("cv.ls","cv.gcv","cv.aic"),
                         kernel=TRUE,
                         lambda=NULL,
-                        kernel.type=c("nominal","ordinal"),
                         complexity=c("degree-knots","degree","knots"),
                         knots=c("quantiles","uniform"),
-                        basis=c("additive","tensor","auto"),
+                        basis=c("additive","tensor","glp","auto"),
                         deriv=0,
                         data.return=FALSE,
                         prune=FALSE,
@@ -352,7 +361,6 @@ crs.formula <- function(formula,
 
   cv <- match.arg(cv)  
   cv.func <- match.arg(cv.func)
-  kernel.type <- match.arg(kernel.type)
   complexity <- match.arg(complexity)
   knots <- match.arg(knots)
   basis <- match.arg(basis)
@@ -360,12 +368,7 @@ crs.formula <- function(formula,
   mf <- model.frame(formula=formula, data=data)
   mt <- attr(mf, "terms")
   y <- model.response(mf)
-#  xz <- data.frame(mf[,-1,drop=FALSE])
-  ## May 20 2011, trying alternative way for factors...
   xz <- mf[, attr(attr(mf, "terms"),"term.labels"), drop = FALSE]
-#  names(xz) <- names(mf)[-1] ## Case of one predictor has names clobbered
-
-  ### cv needs this? 9/12/2010
 
   if(!kernel) {
     xztmp <- splitFrame(xz)
@@ -378,6 +381,7 @@ crs.formula <- function(formula,
   z <- xztmp$z
   znames <- xztmp$znames
   num.z <- xztmp$num.z
+  is.ordered.z <- xztmp$is.ordered.z
   ## The default is kernel==TRUE - this will throw an error with no
   ## categorical predictors so first check
   if(is.null(num.z) && kernel==TRUE) kernel <- FALSE
@@ -386,11 +390,21 @@ crs.formula <- function(formula,
     include <- NULL
   }
 
+  ## Check for dynamic cv and if number of combinations is not overly
+  ## large use exhaustive search
+
+  if(cv=="nomad" && is.null(num.z) && ((degree.max-degree.min)*(segments.max-segments.min))**num.x <= cv.threshold) {
+    warning(" Dynamically changing search from nomad to exhaustive (if unwanted set cv.threshold to 0)")
+    cv <- "exhaustive"
+    if(nmulti > 0) warning(" Exhaustive search, nmulti ignored...")
+  }
+
   ## If no degree nor include nor lambda, return cubic spline
   ## (identity bases) or non-smooth model (kernel).
 
   if(!is.null(degree)&&length(degree)!=num.x) stop(" degree vector must be the same length as x")
-  if(!is.null(segments)&&length(segments)!=num.x) stop(" segments vector must be the same length as x")    
+  if(!is.null(segments)&&length(segments)!=num.x) stop(" segments vector must be the same length as x")
+  if(degree.max > 100) stop(paste(" degree.max (",degree.max,") exceeds reasonable value (",100,")",sep=""))
 
   if(cv=="none"){
       if(is.null(degree)&!is.null(x)) degree <- rep(3,num.x)
@@ -399,64 +413,70 @@ crs.formula <- function(formula,
       if(is.null(lambda)&!is.null(z)&kernel) lambda <- rep(0,num.z)
   }
 
-
-  if(cv!="none"&&basis!="auto"&&NCOL(xz)>1) warning(paste(" cv specified but basis is ", basis, ": you might consider basis=\"auto\"",sep=""))
+  if(cv!="none"&&basis!="auto"&&NCOL(xz)>1) warning(paste(" Multiple predictor cv and basis is ", basis, ": you could consider basis=\"auto\"",sep=""),immediate.=TRUE)
 
   if(kernel==TRUE&&prune==TRUE) warning(" pruning cannot coexist with categorical kernel smoothing (pruning ignored)")
 
-  cv.min <- NULL
+  ## Check for cv="nomad" and complexity="degree-knots" but
+  ## degree.min==degree.max or segments==segments.max
 
+  if((cv=="nomad" && complexity=="degree-knots") && (segments.min==segments.max)) stop("NOMAD search selected with complexity degree-knots but segments.min and segments.max are equal")
+  if((cv=="nomad" && complexity=="degree-knots") && (degree.min==degree.max)) stop("NOMAD search selected with complexity degree-knots but degree.min and degree.max are equal")
+
+  cv.min <- NULL
+  ptm <- system.time("")
+  
   if(!kernel) {
 
     ## indicator bases and B-spline bases cross-validation
     
     if(cv=="nomad") {
       
-      cv.return <- frscvNOMAD(xz=xz,
-                              y=y,
-                              degree.max=degree.max, 
-                              segments.max=segments.max, 
-                              degree.min=degree.min, 
-                              segments.min=segments.min, 
-                              complexity=complexity,
-                              knots=knots,
-                              basis=basis,
-                              cv.func=cv.func,
-                              degree=degree,
-                              segments=segments, 
-                              include=include, 
-                              random.seed=random.seed,
-                              opts=opts,
-                              nmulti=nmulti)
+      ptm <- ptm + system.time(cv.return <- frscvNOMAD(xz=xz,
+                                                       y=y,
+                                                       degree.max=degree.max, 
+                                                       segments.max=segments.max, 
+                                                       degree.min=degree.min, 
+                                                       segments.min=segments.min, 
+                                                       complexity=complexity,
+                                                       knots=knots,
+                                                       basis=basis,
+                                                       cv.func=cv.func,
+                                                       degree=degree,
+                                                       segments=segments, 
+                                                       include=include, 
+                                                       random.seed=random.seed,
+                                                       opts=opts,
+                                                       nmulti=nmulti))
 
-  cv.min <- cv.return$cv.min
-  degree <- cv.return$degree
-  segments <- cv.return$segments
-  include <- cv.return$I
-  basis <- cv.return$basis
-
+      cv.min <- cv.return$cv.min
+      degree <- cv.return$degree
+      segments <- cv.return$segments
+      include <- cv.return$I
+      basis <- cv.return$basis
+      if(isTRUE(all.equal(cv.min,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with larger nmulti or smaller degree.max  (or degree if provided)")
     }  else if(cv=="exhaustive") {
 
-      cv.return <- frscv(xz=xz,
-                         y=y,
-                         degree.max=degree.max, 
-                         segments.max=segments.max, 
-                         degree.min=degree.min, 
-                         segments.min=segments.min, 
-                         complexity=complexity,
-                         knots=knots,
-                         basis=basis,
-                         cv.func=cv.func,
-                         degree=degree,
-                         segments=segments)
-
-
-  cv.min <- cv.return$cv.min
-  degree <- cv.return$degree
-  segments <- cv.return$segments
-  include <- cv.return$I
-  basis <- cv.return$basis
-
+      ptm <- ptm + system.time(cv.return <- frscv(xz=xz,
+                                                  y=y,
+                                                  degree.max=degree.max, 
+                                                  segments.max=segments.max, 
+                                                  degree.min=degree.min, 
+                                                  segments.min=segments.min, 
+                                                  complexity=complexity,
+                                                  knots=knots,
+                                                  basis=basis,
+                                                  cv.func=cv.func,
+                                                  degree=degree,
+                                                  segments=segments))
+      
+      
+      cv.min <- cv.return$cv.min
+      degree <- cv.return$degree
+      segments <- cv.return$segments
+      include <- cv.return$I
+      basis <- cv.return$basis
+      if(isTRUE(all.equal(cv.min,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with smaller degree.max")
     }
 
   } else {
@@ -465,22 +485,22 @@ crs.formula <- function(formula,
     
     if(cv=="nomad") {
 
-      cv.return <- krscvNOMAD(xz=xz,
-                              y=y,
-                              degree.max=degree.max, 
-                              segments.max=segments.max, 
-                              degree.min=degree.min, 
-                              segments.min=segments.min, 
-                              complexity=complexity,
-                              knots=knots,
-                              basis=basis,
-                              cv.func=cv.func,
-                              degree=degree,
-                              segments=segments,
-                              lambda=lambda, 
-                              random.seed=random.seed,
-                              opts=opts,
-                              nmulti=nmulti)
+      ptm <- ptm + system.time(cv.return <- krscvNOMAD(xz=xz,
+                                                       y=y,
+                                                       degree.max=degree.max, 
+                                                       segments.max=segments.max, 
+                                                       degree.min=degree.min, 
+                                                       segments.min=segments.min, 
+                                                       complexity=complexity,
+                                                       knots=knots,
+                                                       basis=basis,
+                                                       cv.func=cv.func,
+                                                       degree=degree,
+                                                       segments=segments,
+                                                       lambda=lambda, 
+                                                       random.seed=random.seed,
+                                                       opts=opts,
+                                                       nmulti=nmulti))
       
       cv.min <- cv.return$cv.min
       degree <- cv.return$degree
@@ -488,48 +508,50 @@ crs.formula <- function(formula,
       include <- cv.return$I
       lambda <- cv.return$lambda
       basis <- cv.return$basis
+      if(isTRUE(all.equal(cv.min,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with larger nmulti or smaller degree.max")
     
     } else if(cv=="exhaustive") {
       
-      cv.return <- krscv(xz=xz,
-                         y=y,
-                         degree.max=degree.max, 
-                         segments.max=segments.max, 
-                         degree.min=degree.min, 
-                         segments.min=segments.min, 
-                         complexity=complexity,
-                         knots=knots,
-                         basis=basis,
-                         cv.func=cv.func,
-                         degree=degree,
-                         segments=segments,
-                         restarts=restarts)
+      ptm <- ptm + system.time(cv.return <- krscv(xz=xz,
+                                                  y=y,
+                                                  degree.max=degree.max, 
+                                                  segments.max=segments.max, 
+                                                  degree.min=degree.min, 
+                                                  segments.min=segments.min, 
+                                                  complexity=complexity,
+                                                  knots=knots,
+                                                  basis=basis,
+                                                  cv.func=cv.func,
+                                                  degree=degree,
+                                                  segments=segments,
+                                                  restarts=restarts))
+      
       cv.min <- cv.return$cv.min
       degree <- cv.return$degree
       segments <- cv.return$segments
       include <- cv.return$I
       lambda <- cv.return$lambda
       basis <- cv.return$basis
+      if(isTRUE(all.equal(cv.min,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with smaller degree.max")
     
     }
     
   }
   
-  est <- crs.default(xz=xz,
-                     y=y,
-                     degree=degree,
-                     segments=segments,
-                     include=include,
-                     kernel=kernel,
-                     lambda=lambda,
-                     kernel.type=kernel.type,
-                     complexity=complexity,
-                     knots=knots,
-                     basis=basis,
-                     deriv=deriv,
-                     data.return=data.return,
-                     prune=prune,
-                     ...)
+  ptm <- ptm + system.time(est <- crs.default(xz=xz,
+                                              y=y,
+                                              degree=degree,
+                                              segments=segments,
+                                              include=include,
+                                              kernel=kernel,
+                                              lambda=lambda,
+                                              complexity=complexity,
+                                              knots=knots,
+                                              basis=basis,
+                                              deriv=deriv,
+                                              data.return=data.return,
+                                              prune=prune,
+                                              ...))
   
   est$call <- match.call()
   est$formula <- formula
@@ -539,7 +561,10 @@ crs.formula <- function(formula,
   est$y <- y
   est$prune <- prune
   est$cv.min <- cv.min
+  est$cv <- cv
   est$restarts <- restarts
+  est$ptm <- ptm
+  est$nmulti <- nmulti
   
   return(est)
 
@@ -585,6 +610,7 @@ predict.crs <- function(object,
     }
     x <- xztmp$x
     z <- xztmp$z
+    is.ordered.z <- xztmp$is.ordered.z
     rm(xztmp)
 
     ## Get evaluation data (newdata) and divide into factors and
@@ -593,9 +619,6 @@ predict.crs <- function(object,
     Terms <- delete.response(terms(object))
     newdata <- model.frame(Terms,newdata,xlev=object$xlevels)
 
-    ## May 20 - this could be a solution of sorts... the issue is that xz does not have information
-    #newdata <- tmf[, attr(attr(tmf, "terms"),"term.labels"), drop = FALSE]
-
     if(!object$kernel) {
       xztmp <- splitFrame(data.frame(newdata))
     } else {
@@ -603,6 +626,7 @@ predict.crs <- function(object,
     }
     xeval <- xztmp$x
     zeval <- xztmp$z
+    is.ordered.z <- xztmp$is.ordered.z    
     rm(xztmp)
 
     ## Compute the predicted values.
@@ -644,18 +668,22 @@ predict.crs <- function(object,
         m <- 1 ## num.x
         for(i in 1:ncol(newdata)) {
           if(!is.factor(newdata[,i])) {
-            tmp <- deriv.factor.spline(x=x,
-                                       y=y,
-                                       z=z,
-                                       K=K,
-                                       I=include,
-                                       xeval=xeval,
-                                       zeval=zeval,
-                                       knots=knots,
-                                       basis=basis,
-                                       deriv.index=m,
-                                       deriv=deriv,
-                                       prune.index=prune.index)
+            if(deriv <= degree[m]) {
+              tmp <- deriv.factor.spline(x=x,
+                                         y=y,
+                                         z=z,
+                                         K=K,
+                                         I=include,
+                                         xeval=xeval,
+                                         zeval=zeval,
+                                         knots=knots,
+                                         basis=basis,
+                                         deriv.index=m,
+                                         deriv=deriv,
+                                         prune.index=prune.index)
+            } else {
+              tmp <- matrix(0,nrow(xeval),3)
+            }
             deriv.mat[,i] <- tmp[,1]
             deriv.mat.lwr[,i] <- tmp[,2]
             deriv.mat.upr[,i] <- tmp[,3]
@@ -713,7 +741,7 @@ predict.crs <- function(object,
       degree <- object$degree
       lambda <- object$lambda
 
-      kernel.type <- object$kernel.type
+      is.ordered.z <- object$is.ordered.z
 
       z <- as.matrix(z)
       zeval <- as.matrix(zeval)
@@ -723,7 +751,7 @@ predict.crs <- function(object,
                                    z=z,
                                    K=K,
                                    lambda=lambda,
-                                   kernel.type=kernel.type,
+                                   is.ordered.z=is.ordered.z,
                                    xeval=xeval,
                                    zeval=zeval,
                                    knots=knots,
@@ -743,18 +771,22 @@ predict.crs <- function(object,
         m <- 1 ## num.x
         for(i in 1:ncol(newdata)) {
           if(!is.factor(newdata[,i])) {
-            tmp <- deriv.kernel.spline(x=x,
-                                       y=y,
-                                       z=z,
-                                       K=K,
-                                       lambda=lambda,
-                                       kernel.type=kernel.type,
-                                       xeval=xeval,
-                                       zeval=zeval,
-                                       knots=knots,
-                                       basis=basis,
-                                       deriv.index=m,
-                                       deriv=deriv)
+            if(deriv <= degree[m]) {
+              tmp <- deriv.kernel.spline(x=x,
+                                         y=y,
+                                         z=z,
+                                         K=K,
+                                         lambda=lambda,
+                                         is.ordered.z=is.ordered.z,
+                                         xeval=xeval,
+                                         zeval=zeval,
+                                         knots=knots,
+                                         basis=basis,
+                                         deriv.index=m,
+                                         deriv=deriv)
+            } else {
+              tmp <- matrix(0,nrow(xeval),3)
+            }
             deriv.mat[,i] <- tmp[,1]
             deriv.mat.lwr[,i] <- tmp[,2]
             deriv.mat.upr[,i] <- tmp[,3]
@@ -768,7 +800,7 @@ predict.crs <- function(object,
                                            z=z,
                                            K=K,
                                            lambda=lambda,
-                                           kernel.type=kernel.type,
+                                           is.ordered.z=is.ordered.z,
                                            xeval=xeval,
                                            zeval=zeval,
                                            knots=knots,
@@ -779,7 +811,7 @@ predict.crs <- function(object,
                                                 z=z,
                                                 K=K,
                                                 lambda=lambda,
-                                                kernel.type=kernel.type,
+                                                is.ordered.z=is.ordered.z,
                                                 xeval=xeval,
                                                 zeval=zevaltmp,
                                                 knots=knots,
@@ -864,11 +896,14 @@ summary.crs <- function(object,
   adjusted.r.squared <- 1-(1-object$r.squared)*(length(object$fitted.values)-1)/object$df.residual
   cat(paste("\nMultiple R-squared: ", format(object$r.squared,digits=4),",   Adjusted R-squared: ",format(adjusted.r.squared,digits=4), sep=""))
   cat(paste("\nCross-validation score: ", format(object$cv.score,digits=8), sep=""))  
+  if(object$cv != "none") cat(paste("\nNumber of multistarts: ", format(object$nmulti), sep=""))
 
   if(sigtest&!object$kernel) {
     cat("\n\nPredictor significance test:\n")
     crs.sigtest(object)
   }
+
+  cat(paste("\nEstimation time: ", formatC(object$ptm[1],digits=1,format="f"), " seconds",sep=""))
 
   cat("\n\n")
 
@@ -876,26 +911,29 @@ summary.crs <- function(object,
 
 plot.crs <- function(x,
                      mean=FALSE,
-                     deriv=FALSE,
+                     deriv=0,
                      ci=FALSE,
                      num.eval=100,
                      caption=list("Residuals vs Fitted",
                        "Normal Q-Q Plot",
                        "Scale-Location",
                        "Cook's Distance"),
+                     xtrim = 0.0,
+                     xq = 0.5,
                      plot.behavior = c("plot","plot-data","data"),
+                     common.scale=TRUE,
+                     persp.rgl=FALSE,
                      ...) {
 
   plot.behavior <- match.arg(plot.behavior)
-
-  ## We use object below as x is used for data but plot wants
-  ## function(x,..)
 
   object <- x
 
   console <- newLineConsole()
   console <- printClear(console)
   console <- printPop(console)
+
+  xq <- double(ncol(object$xz)) + xq
 
   ## Default - basic residual plots
 
@@ -907,7 +945,7 @@ plot.crs <- function(x,
 
     console <- printClear(console)
     console <- printPop(console)
-    console <- printPush("Working...",console = console)
+    console <- printPush("\rWorking...",console = console)
 
     plot(fitted(object),
          residuals(object),
@@ -920,7 +958,7 @@ plot.crs <- function(x,
 
     console <- printClear(console)
     console <- printPop(console)
-    console <- printPush("Working...",console = console)
+    console <- printPush("\rWorking...",console = console)
 
     std.res <- residuals(object)/sqrt(mean(residuals(object)^2))
 
@@ -933,7 +971,7 @@ plot.crs <- function(x,
 
     console <- printClear(console)
     console <- printPop(console)
-    console <- printPush("Working...",console = console)
+    console <- printPush("\rWorking...",console = console)
 
     plot(fitted(object),
          sqrt(abs(residuals(object,"pearson"))),
@@ -952,7 +990,7 @@ plot.crs <- function(x,
       
       console <- printClear(console)
       console <- printPop(console)
-      console <- printPush("Working...",console = console)
+      console <- printPush("\rWorking...",console = console)
 
       sigmasq <- sum(residuals(object)^2)/object$df.residual
       cook <- (residuals(object)^2*object$hatvalues)/(sigmasq*(1-object$hatvalues)^2*object$k)
@@ -974,134 +1012,44 @@ plot.crs <- function(x,
 
   if(mean) {
 
-    if(!is.null(object$num.z)||(object$num.x>1)) par(mfrow=dim.plot(NCOL(object$xz)))
+    ## Information required to compute predictions
 
-    mg <- list()
-
-    ## Drawback - data must be first cast outside formula for plot to
-    ## work properly (Tristen figured this out so can hunt down issue
-    ## later - but this works)
-
-    for(i in 1:NCOL(object$xz)) {
-
-      if(!is.factor(object$xz[,i])) {
-        newdata <- matrix(NA,nrow=num.eval,ncol=NCOL(object$xz))
-        neval <- num.eval
-      } else {
-        newdata <- matrix(NA,nrow=length(levels(object$xz[,i])),ncol=NCOL(object$xz))
-        neval <- length(levels(object$xz[,i]))
-      }
-
-      newdata <- data.frame(newdata)
-
-      if(!is.factor(object$xz[,i])) {
-        newdata[,i] <- seq(min(object$xz[,i]),max(object$xz[,i]),length=neval)
-      } else {
-        newdata[,i] <- factor(levels(object$xz[,i]),levels=levels(object$xz[,i]))
-      }
-
-      for(j in (1:NCOL(object$xz))[-i]) {
-        if(!is.factor(object$xz[,j])) {
-          newdata[,j] <- rep(uocquantile(object$xz[,j],.5),neval)
-        } else {
-          newdata[,j] <- factor(rep(uocquantile(object$xz[,j],.5),neval),levels=levels(object$xz[,j]))
-        }
-      }
-
-      newdata <- data.frame(newdata)
-      names(newdata) <- names(object$xz)
-
-      if(!ci) {
-
-        ## May 20 - trying to debug plot - issue appears to be that
-        ## predict is barfing because formula was used and newdata
-        ## does not have similar objects...
-        
-#    print("Here we are")
-#    print(class(newdata[,i]))
-
-        mg[[i]] <- data.frame(newdata[,i],predict(object,newdata=newdata))
-        names(mg[[i]]) <- c(names(newdata)[i],"deriv")
-        
-      } else {
-        
-        fitted.values <- predict(object,newdata=newdata)
-        mg[[i]] <- data.frame(newdata[,i],fitted.values,attr(fitted.values,"lwr"),attr(fitted.values,"upr"))
-        names(mg[[i]]) <- c(names(newdata)[i],"mean","lwr","upr")
-        
-      }
-      
-      console <- printClear(console)
-      console <- printPop(console)
-
+    basis <- object$basis
+    prune <- object$prune
+    prune.index <- object$prune.index
+    
+    xz <- object$xz
+    y <- object$y
+    
+    ## Divide into factors and numeric
+    
+    if(!object$kernel) {
+      xztmp <- splitFrame(xz)
+    } else {
+      xztmp <- splitFrame(xz,factor.to.numeric=TRUE)
     }
-    
-    ## Can now add common scale for mean if desired.
-    
-    if(plot.behavior!="data") {
-      
-      for(i in 1:NCOL(object$xz)) {
-        
-        if(!ci) {
-          plot(mg[[i]][,1],mg[[i]][,2],
-               xlab=names(newdata)[i],
-               ylab="Conditional Mean",
-               type="l",
-               ...)
+    x <- xztmp$x
+    z <- xztmp$z
+    is.ordered.z <- xztmp$is.ordered.z    
+    rm(xztmp)
+
+    ## Get degree vector and lambda vector
           
-        } else {
-          ylim <- c(min(mg[[i]][,-1]),max(mg[[i]][,-1]))
-          plot(mg[[i]][,1],mg[[i]][,2],
-               xlab=names(newdata)[i],
-               ylab="Conditional Mean",
-               ylim=ylim,
-               type="l",
-               ...)
-          ## Need to overlay for proper plotting of factor errorbars
-          par(new=TRUE)
-          plot(mg[[i]][,1],mg[[i]][,3],
-               xlab="",
-               ylab="",
-               ylim=ylim,
-               type="l",
-               axes=FALSE,
-               lty=2,
-               col=2,
-               ...)
-          par(new=TRUE)
-          plot(mg[[i]][,1],mg[[i]][,4],
-               xlab="",
-               ylab="",
-               ylim=ylim,
-               type="l",
-               axes=FALSE,
-               lty=2,
-               col=2,
-               ...)
-        }
+    complexity <- object$complexity
+    knots <- object$knots
+    K <- object$K
+    degree <- object$degree
+    segments <- object$segments
+    include <- object$include
+    lambda <- object$lambda
+    is.ordered.z <- object$is.ordered.z
+
+    ## End information required to compute predictions
         
-      }
+    if(!persp.rgl) {
 
-    }
+      mg <- list()
       
-    if(plot.behavior!="plot") return(mg)
-      
-  }
-    
-  ## deriv
-
-  if(deriv) {
-
-    if(object$deriv > 0) {
-
-      if(!is.null(object$num.z)||(object$num.x>1)) par(mfrow=dim.plot(NCOL(object$xz)))
-
-      rg <- list()
-
-      ## Drawback - data must be first cast outside formula for plot to
-      ## work properly (Tristen figured this out so can hunt down issue
-      ## later - but this works)
-
       for(i in 1:NCOL(object$xz)) {
 
         if(!is.factor(object$xz[,i])) {
@@ -1111,38 +1059,444 @@ plot.crs <- function(x,
           newdata <- matrix(NA,nrow=length(levels(object$xz[,i])),ncol=NCOL(object$xz))
           neval <- length(levels(object$xz[,i]))
         }
-
+        
         newdata <- data.frame(newdata)
-
+        
         if(!is.factor(object$xz[,i])) {
-          newdata[,i] <- seq(min(object$xz[,i]),max(object$xz[,i]),length=neval)
+          xlim <- trim.quantiles(object$xz[,i],xtrim)
+          newdata[,i] <- seq(xlim[1],xlim[2],length=neval)
         } else {
           newdata[,i] <- factor(levels(object$xz[,i]),levels=levels(object$xz[,i]))
+        }
+        
+        for(j in (1:NCOL(object$xz))[-i]) {
+          if(!is.factor(object$xz[,j])) {
+            newdata[,j] <- rep(uocquantile(object$xz[,j],prob=xq[j]),neval)
+          } else {
+            newdata[,j] <- factor(rep(uocquantile(object$xz[,j],prob=xq[j]),neval),levels=levels(object$xz[,j]))
+          }
+        }
+        
+        newdata <- data.frame(newdata)
+        names(newdata) <- names(object$xz)
+
+        if(!object$kernel) {
+          xztmp <- splitFrame(data.frame(newdata))
+        } else {
+          xztmp <- splitFrame(data.frame(newdata),factor.to.numeric=TRUE)
+        }
+        xeval <- xztmp$x
+        zeval <- xztmp$z
+        is.ordered.z <- xztmp$is.ordered.z        
+        rm(xztmp)
+        
+        ## Compute the predicted values.
+        
+        if(!object$kernel) {
+          
+          tmp <- predict.factor.spline(x=x,
+                                       y=y,
+                                       z=z,
+                                       K=K,
+                                       I=include,
+                                       xeval=xeval,
+                                       zeval=zeval,
+                                       basis=basis,
+                                       knots=knots,
+                                       prune=prune,
+                                       prune.index=prune.index)$fitted.values
+          
+          fitted.values <- tmp[,1]
+          lwr <- tmp[,2]
+          upr <- tmp[,3]
+          rm(tmp)
+          
+        } else {
+                
+          z <- as.matrix(z)
+          zeval <- as.matrix(zeval)
+          
+          tmp <- predict.kernel.spline(x=x,
+                                       y=y,
+                                       z=z,
+                                       K=K,
+                                       lambda=lambda,
+                                       is.ordered.z=is.ordered.z,
+                                       xeval=xeval,
+                                       zeval=zeval,
+                                       knots=knots,
+                                       basis=basis)$fitted.values
+          
+          fitted.values <- tmp[,1]
+          lwr <- tmp[,2]
+          upr <- tmp[,3]
+          rm(tmp)
+          
+        }
+        
+        if(!ci) {
+          
+          mg[[i]] <- data.frame(newdata[,i],fitted.values)
+          names(mg[[i]]) <- c(names(newdata)[i],"mean")
+          
+        } else {
+          mg[[i]] <- data.frame(newdata[,i],fitted.values,lwr,upr)
+          names(mg[[i]]) <- c(names(newdata)[i],"mean","lwr","upr")
+        }
+        
+        console <- printClear(console)
+        console <- printPop(console)
+        
+      }
+      
+      if(common.scale) {
+        min.mg <- Inf
+        max.mg <- -Inf
+        for(i in 1:length(mg)) {
+          min.mg <- min(min.mg,min(mg[[i]][,-1]))
+          max.mg <- max(max.mg,max(mg[[i]][,-1]))
+        }
+        ylim <- c(min.mg,max.mg)
+      } else {
+        ylim <- NULL
+      }
+      
+      if(plot.behavior!="data") {
+        
+        if(!is.null(object$num.z)||(object$num.x>1)) par(mfrow=dim.plot(NCOL(object$xz)))
+      
+        for(i in 1:NCOL(object$xz)) {
+          
+          if(!ci) {
+            plot(mg[[i]][,1],mg[[i]][,2],
+                 xlab=names(newdata)[i],
+                 ylab="Conditional Mean",
+                 ylim=ylim,
+                 type="l",
+                 ...)
+            
+          } else {
+            if(!common.scale) ylim <- c(min(mg[[i]][,-1]),max(mg[[i]][,-1]))
+            plot(mg[[i]][,1],mg[[i]][,2],
+                 xlab=names(newdata)[i],
+                 ylab="Conditional Mean",
+                 ylim=ylim,
+                 type="l",
+                 ...)
+            ## Need to overlay for proper plotting of factor errorbars
+            par(new=TRUE)
+            plot(mg[[i]][,1],mg[[i]][,3],
+                 xlab="",
+                 ylab="",
+                 ylim=ylim,
+                 type="l",
+                 axes=FALSE,
+                 lty=2,
+                 col=2,
+                 ...)
+            par(new=TRUE)
+            plot(mg[[i]][,1],mg[[i]][,4],
+                 xlab="",
+                 ylab="",
+                 ylim=ylim,
+                 type="l",
+                 axes=FALSE,
+                 lty=2,
+                 col=2,
+                 ...)
+          }
+          
+        }
+        
+      }
+      
+    } else {
+      
+      
+      if(!require(rgl)) stop(" Error: you must first install the rgl package")
+      
+      if(!is.null(object$num.z)) stop(" Error: persp3d is for continuous predictors only")
+      if(object$num.x != 2) stop(" Error: persp3d is for cases involving two continuous predictors only")
+      
+      newdata <- matrix(NA,nrow=num.eval,ncol=2)
+      newdata <- data.frame(newdata)
+      
+      xlim <- trim.quantiles(object$xz[,1],xtrim)
+      ylim <- trim.quantiles(object$xz[,2],xtrim)      
+      
+      x1.seq <- seq(xlim[1],xlim[2],length=num.eval)
+      x2.seq <- seq(ylim[1],ylim[2],length=num.eval)    
+
+      x.grid <- expand.grid(x1.seq,x2.seq)
+      newdata <- data.frame(x.grid[,1],x.grid[,2])
+      names(newdata) <- names(object$xz)
+      
+      z <- matrix(predict(object,newdata=newdata),num.eval,num.eval)
+      
+      mg <- list()
+
+      mg[[1]] <- data.frame(newdata,z)
+
+      if(plot.behavior!="data") {
+      
+        num.colors <- 1000
+        colorlut <- topo.colors(num.colors) 
+        col <- colorlut[ (num.colors-1)*(z-min(z))/(max(z)-min(z)) + 1 ]
+        
+        open3d()
+        
+        par3d(windowRect=c(900,100,900+640,100+640))
+        rgl.viewpoint(theta = 0, phi = -70, fov = 80)
+        
+        persp3d(x=x1.seq,y=x2.seq,z=z,
+                xlab=names(object$xz)[1],ylab=names(object$xz)[2],zlab="Y",
+                ticktype="detailed",      
+                border="red",
+                color=col,
+                alpha=.7,
+                back="lines",
+                main="Conditional Mean")
+        
+        grid3d(c("x", "y+", "z"))
+        
+        play3d(spin3d(axis=c(0,0,1), rpm=5), duration=15)
+        
+      }
+      
+    }
+    
+    if(plot.behavior!="plot") {
+      console <- printClear(console)
+      console <- printPop(console)
+      return(mg)
+    }
+      
+  }
+    
+  ## deriv
+
+  if(deriv > 0) {
+
+    ## Information required to compute predictions
+
+    basis <- object$basis
+    prune <- object$prune
+    prune.index <- object$prune.index
+    
+    xz <- object$xz
+    y <- object$y
+    
+    ## Divide into factors and numeric
+    
+    if(!object$kernel) {
+      xztmp <- splitFrame(xz)
+    } else {
+      xztmp <- splitFrame(xz,factor.to.numeric=TRUE)
+    }
+    x <- xztmp$x
+    z <- xztmp$z
+    is.ordered.z <- xztmp$is.ordered.z    
+    rm(xztmp)
+
+    ## Get degree vector and lambda vector
+          
+    complexity <- object$complexity
+    knots <- object$knots
+    K <- object$K
+    degree <- object$degree
+    segments <- object$segments
+    include <- object$include
+    lambda <- object$lambda
+    is.ordered.z <- object$is.ordered.z
+
+    ## End information required to compute predictions
+        
+    if(deriv > 0) {
+
+      rg <- list()
+      m <- 0
+      i.numeric <- 0
+
+      for(i in 1:NCOL(object$xz)) {
+
+        if(!is.factor(object$xz[,i])) {
+          i.numeric <- i.numeric + 1
+          newdata <- matrix(NA,nrow=num.eval,ncol=NCOL(object$xz))
+          neval <- num.eval
+          m <- m + 1
+        } else {
+          newdata <- matrix(NA,nrow=length(levels(object$xz[,i])),ncol=NCOL(object$xz))
+          neval <- length(levels(object$xz[,i]))
+        }
+
+        newdata <- data.frame(newdata)
+        newdata.base <- data.frame(newdata)
+
+        if(!is.factor(object$xz[,i])) {
+          xlim <- trim.quantiles(object$xz[,i],xtrim)
+          newdata[,i] <- seq(xlim[1],xlim[2],length=neval)
+        } else {
+          newdata[,i] <- factor(levels(object$xz[,i]),levels=levels(object$xz[,i]))
+          newdata.base[,i] <- factor(rep(levels(object$xz[,i])[1],neval),levels=levels(object$xz[,i]))
         }
 
         for(j in (1:NCOL(object$xz))[-i]) {
           if(!is.factor(object$xz[,j])) {
-            newdata[,j] <- rep(uocquantile(object$xz[,j],.5),neval)
+            newdata[,j] <- rep(uocquantile(object$xz[,j],prob=xq[j]),neval)
+            newdata.base[,j] <- rep(uocquantile(object$xz[,j],prob=xq[j]),neval)
           } else {
-            newdata[,j] <- factor(rep(uocquantile(object$xz[,j],.5),neval),levels=levels(object$xz[,j]))
+            newdata[,j] <- factor(rep(uocquantile(object$xz[,j],prob=xq[j]),neval),levels=levels(object$xz[,j]))
+            newdata.base[,j] <- factor(rep(uocquantile(object$xz[,j],prob=xq[j]),neval),levels=levels(object$xz[,j]))            
           }
         }
 
         newdata <- data.frame(newdata)
         names(newdata) <- names(object$xz)
+        newdata.base <- data.frame(newdata.base)
+        names(newdata.base) <- names(object$xz)
 
+        if(!object$kernel) {
+          xztmp <- splitFrame(data.frame(newdata))
+        } else {
+          xztmp <- splitFrame(data.frame(newdata),factor.to.numeric=TRUE)
+        }
+        xeval <- xztmp$x
+        zeval <- xztmp$z
+        is.ordered.z <- xztmp$is.ordered.z            
+        rm(xztmp)
+        
+        if(!object$kernel) {
+          xztmp <- splitFrame(data.frame(newdata.base))
+        } else {
+          xztmp <- splitFrame(data.frame(newdata.base),factor.to.numeric=TRUE)
+        }
+        xeval.base <- xztmp$x
+        zeval.base <- xztmp$z
+        is.ordered.z <- xztmp$is.ordered.z            
+        rm(xztmp)
+        
+        ## Compute the predicted values.
+        
+        if(!object$kernel) {
+
+          if(!is.factor(newdata[,i])) {
+
+            if(deriv <= degree[i.numeric]) {
+              tmp <- deriv.factor.spline(x=x,
+                                         y=y,
+                                         z=z,
+                                         K=K,
+                                         I=include,
+                                         xeval=xeval,
+                                         zeval=zeval,
+                                         knots=knots,
+                                         basis=basis,
+                                         deriv.index=m,
+                                         deriv=deriv,
+                                         prune.index=prune.index)
+            } else {
+              tmp <- matrix(0,nrow(newdata),3)
+            }
+            deriv.est <- tmp[,1]
+            deriv.lwr <- tmp[,2]
+            deriv.upr <- tmp[,3]
+            rm(tmp) 
+          } else {
+            zpred <- predict.factor.spline(x=x,
+                                           y=y,
+                                           z=z,
+                                           K=K,
+                                           I=include,
+                                           xeval=xeval,
+                                           zeval=zeval,
+                                           knots=knots,
+                                           basis=basis,
+                                           prune=prune,
+                                           prune.index=prune.index)$fitted.values
+            
+            zpred.base <- predict.factor.spline(x=x,
+                                                y=y,
+                                                z=z,
+                                                K=K,
+                                                I=include,
+                                                xeval=xeval.base,
+                                                zeval=zeval.base,
+                                                knots=knots,
+                                                basis=basis,
+                                                prune=prune,
+                                                prune.index=prune.index)$fitted.values
+            
+            deriv.est <- zpred[,1]-zpred.base[,1]
+            deriv.lwr <- deriv.est - qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
+            deriv.upr <- deriv.est + qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
+            
+          }          
+          
+        } else {
+          
+          if(!is.factor(newdata[,i])) {
+            if(deriv <= degree[i.numeric]) {
+              tmp <- deriv.kernel.spline(x=x,
+                                         y=y,
+                                         z=z,
+                                         K=K,
+                                         lambda=lambda,
+                                         is.ordered.z=is.ordered.z,
+                                         xeval=xeval,
+                                         zeval=zeval,
+                                         knots=knots,
+                                         basis=basis,
+                                         deriv.index=m,
+                                         deriv=deriv)
+            } else {
+              tmp <- matrix(0,nrow(newdata),3)
+            }
+            deriv.est <- tmp[,1]
+            deriv.lwr <- tmp[,2]
+            deriv.upr <- tmp[,3]
+            rm(tmp) 
+          } else {
+            zpred <- predict.kernel.spline(x=x,
+                                           y=y,
+                                           z=z,
+                                           K=K,
+                                           lambda=lambda,
+                                           is.ordered.z=is.ordered.z,
+                                           xeval=xeval,
+                                           zeval=zeval,
+                                           knots=knots,
+                                           basis=basis)$fitted.values
+            
+            zpred.base <- predict.kernel.spline(x=x,
+                                                y=y,
+                                                z=z,
+                                                K=K,
+                                                lambda=lambda,
+                                                is.ordered.z=is.ordered.z,
+                                                xeval=xeval.base,
+                                                zeval=zeval.base,
+                                                knots=knots,
+                                                basis=basis)$fitted.values
+            
+            deriv.est <- zpred[,1]-zpred.base[,1]
+            deriv.lwr <- deriv.est - qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
+            deriv.upr <- deriv.est + qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
+            
+          }
+          
+        } 
+        
         if(!ci) {
           
-          rg[[i]] <- data.frame(newdata[,i],attr(predict(object,newdata=newdata),"deriv.mat")[,i])
+          rg[[i]] <- data.frame(newdata[,i],deriv.est)
           names(rg[[i]]) <- c(names(newdata)[i],"deriv")
           
         } else {
           
-          fitted.values <- predict(object,newdata=newdata)
           rg[[i]] <- data.frame(newdata[,i],
-                                attr(predict(object,newdata=newdata),"deriv.mat")[,i],
-                                attr(predict(object,newdata=newdata),"deriv.mat.lwr")[,i],
-                                attr(predict(object,newdata=newdata),"deriv.mat.upr")[,i])
+                                deriv.est,
+                                deriv.lwr,
+                                deriv.upr)
           names(rg[[i]]) <- c(names(newdata)[i],"deriv","lwr","upr")
           
         }
@@ -1152,34 +1506,41 @@ plot.crs <- function(x,
 
       }
 
-    } else {
-
-      ## If no deriv given (default=0) issue warning and return
-
-      warning(paste(" derivative plot requested but derivative order is", object$deriv),": specify `deriv=' in crs call",sep="")
-
-    }
+    } 
     
-    ## Can now add common scale for mean if desired.
-    
-    if(object$deriv > 0) {
+    if(deriv > 0) {
+
+      if(common.scale) {
+        min.rg <- Inf
+        max.rg <- -Inf
+        for(i in 1:length(rg)) {
+          min.rg <- min(min.rg,min(rg[[i]][,-1]))
+          max.rg <- max(max.rg,max(rg[[i]][,-1]))
+        }
+        ylim <- c(min.rg,max.rg)
+      } else {
+        ylim <- NULL
+      }
 
       if(plot.behavior!="data") {
+
+        if(!is.null(object$num.z)||(object$num.x>1)) par(mfrow=dim.plot(NCOL(object$xz)))
 
         for(i in 1:NCOL(object$xz)) {
           
           if(!ci) {
             plot(rg[[i]][,1],rg[[i]][,2],
                  xlab=names(newdata)[i],
-                 ylab=ifelse(!is.factor(newdata[,i]), paste("Order", object$deriv,"Derivative"), "Difference in Levels"),
+                 ylab=ifelse(!is.factor(newdata[,i]), paste("Order", deriv,"Derivative"), "Difference in Levels"),
+                 ylim=ylim,
                  type="l",
                  ...)
             
           } else {
-            ylim <- c(min(rg[[i]][,-1]),max(rg[[i]][,-1]))
+            if(!common.scale) ylim <- c(min(rg[[i]][,-1]),max(rg[[i]][,-1]))
             plot(rg[[i]][,1],rg[[i]][,2],
                  xlab=names(newdata)[i],
-                 ylab=ifelse(!is.factor(newdata[,i]), paste("Order", object$deriv,"Derivative"), "Difference in Levels"),
+                 ylab=ifelse(!is.factor(newdata[,i]), paste("Order", deriv,"Derivative"), "Difference in Levels"),
                  ylim=ylim,
                  type="l",
                  ...)
@@ -1210,7 +1571,11 @@ plot.crs <- function(x,
         
       }
       
-      if(plot.behavior!="plot") return(rg)
+      if(plot.behavior!="plot") {
+        console <- printClear(console)
+        console <- printPop(console)
+        return(rg)
+      }
       
     }
     
@@ -1218,7 +1583,10 @@ plot.crs <- function(x,
 
   ## Reset par to 1,1 (can be modified above)
   
-  par(mfrow=c(1,1))
+  console <- printClear(console)
+  console <- printPop(console)
+
+  if(!persp.rgl) par(mfrow=c(1,1))
 
 }
 

@@ -1,4 +1,4 @@
-## This illustration considers the `radial function' and plots the
+## This illustration considers a product sine function and plots the
 ## results by constructing a 3D real-time rendering plot using OpenGL.
 
 require(crs)
@@ -15,10 +15,10 @@ cv <- ifelse(cv==0,"nomad","exhaustive")
 if(cv=="nomad") nmulti <- as.numeric(readline(prompt="Input the number of multistarts desired (e.g. 10): "))
 num.eval <- as.numeric(readline(prompt="Input the number of evaluation observations desired (e.g. 50): "))
 
-x1 <- runif(n,-5,5)
-x2 <- runif(n,-5,5)
+x1 <- runif(n,0,1)
+x2 <- runif(n,0,1)
 
-dgp <- sin(sqrt(x1^2+x2^2))/sqrt(x1^2+x2^2)
+dgp <- sin(pi*(x1+x2))^4*sin(pi*x1)^2
 
 y <- dgp + rnorm(n,sd=.1)
 
@@ -27,6 +27,7 @@ model <- crs(y~x1+x2,
              cv=cv,
              complexity="degree-knots",
              knots="uniform",
+             deriv=1,
              cv.func="cv.aic",
              nmulti=nmulti)
 
@@ -80,8 +81,6 @@ grid3d(c("x", "y+", "z"))
 ## via your mouse/keypad
 
 ## Note - to plot an rgl figure first get it oriented how you want
-## (i.e. resize, rotate etc.) and then call rgl.postscript to create,
+## (i.e. re-size, rotate etc.) and then call rgl.postscript to create,
 ## i.e., a PDF of your graphic as in
-## rgl.postscript("foo.pdf","pdf"). Or better still,
-## rgl.snapshot("foo.png") for a png that can be called directly in
-## LaTeX via \includegraphics[scale=.6]{foo.png}
+## rgl.postscript("persp3db.pdf","pdf")

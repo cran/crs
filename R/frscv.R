@@ -1,18 +1,12 @@
-## This function conducts factor regression spline
-## cross-validation. It takes as input a data.frame xz containing a
-## mix of numeric and factor predictors and a vector y. A range of
-## arguments can be provided, and one can do search on both the degree
-## and knots ("degree-knots") or the degree holding the number of
-## knots (segments+1) constant or the number of knots (segments+1)
-## holding the degree constant. Two basis types are supported
-## ("additive", or "tensor") and the argument "auto" will choose the
-## basis type automatically.
-
-## Currently search is exhaustive taking basis.maxdim as the maximum
-## number of the spline degree (0,1,...) and number of segments
-## (1,2,...). This is a quadratic integer programming problem so
-## ideally I require an IQP (MIQP for kernel-weighting)
-## solver. Currently in R there is no such beast.
+## This function conducts factor regression spline cross-validation
+## using exhaustive search. It takes as input a data.frame xz
+## containing a mix of numeric and factor predictors and a vector y. A
+## range of arguments can be provided, and one can do search on both
+## the degree and knots ("degree-knots") or the degree holding the
+## number of knots (segments+1) constant or the number of knots
+## (segments+1) holding the degree constant. Three basis types are
+## supported ("additive", "glp" or "tensor") and the argument "auto"
+## will choose the basis type automatically.
 
 frscv <- function(xz,
                   y,
@@ -22,7 +16,7 @@ frscv <- function(xz,
                   segments.min=1, 
                   complexity=c("degree-knots","degree","knots"),
                   knots=c("quantiles","uniform"),
-                  basis=c("additive","tensor","auto"),
+                  basis=c("additive","tensor","glp","auto"),
                   cv.func=c("cv.ls","cv.gcv","cv.aic"),
                   degree=degree,
                   segments=segments) {
@@ -103,13 +97,13 @@ frscv <- function(xz,
     if(complexity=="degree") {
       if(!is.null(j)) {
         if(j==1) {
-          tmp.1 <- paste(j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
         } else {
           dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
           tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
                          fw.format.2(as.numeric((t2-t1),units="mins")),
                          "m",sep="")
-          tmp.1 <- paste(j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
         }
       } else {
         tmp.1 <- paste("d[1]=", K[1,1],sep="")
@@ -118,13 +112,13 @@ frscv <- function(xz,
     } else if(complexity=="knots") {
       if(!is.null(j)) {
         if(j==1) {
-          tmp.1 <- paste(j,"/",nrow.KI.mat,", s[1]=",K[1,2],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", s[1]=",K[1,2],sep="")
         } else {
           dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
           tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
                          fw.format.2(as.numeric((t2-t1),units="mins")),
                          "m",sep="")
-          tmp.1 <- paste(j,"/",nrow.KI.mat,tmp.0,", s[1]=",K[1,2],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", s[1]=",K[1,2],sep="")
         }
       } else {
         tmp.1 <- paste("s[1]=", K[1,2],sep="")
@@ -133,13 +127,13 @@ frscv <- function(xz,
     } else if(complexity=="degree-knots") {
       if(!is.null(j)) {
         if(j==1) {
-          tmp.1 <- paste(j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
         } else {
           dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
           tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
                          fw.format.2(as.numeric((t2-t1),units="mins")),
                          "m",sep="")
-          tmp.1 <- paste(j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
         }
       } else {
         tmp.1 <- paste("k[1]=", K[1,1],sep="")
@@ -175,6 +169,7 @@ frscv <- function(xz,
   xztmp <- splitFrame(xz)
   x <- xztmp$x
   z <- xztmp$z
+  is.ordered.z <- xztmp$is.ordered.z
   if(is.null(z)) {
     include <- NULL
     num.z <- 0
@@ -199,7 +194,7 @@ frscv <- function(xz,
   ## (i.e. num.x + num.z = 1) disable auto, set to additive (tensor in
   ## this case, so don't waste time doing both).
 
-  if(num.x+num.z==1 & basis == "auto") basis <- "additive"
+  if((num.x+num.z==1) && (basis == "auto")) basis <- "additive"
 
   if(degree.min < 0 ) degree.min <- 0
   if(segments.min < 1 ) segments.min <- 1
@@ -327,6 +322,29 @@ frscv <- function(xz,
       if(output < cv.vec[j]) {
         cv.vec[j] <- output
         basis.vec[j] <- "tensor"
+      }
+
+      output <- cv.objc(input=KI.mat[j,],
+                        x=x,
+                        y=y,
+                        z=z,
+                        degree.max=degree.max, 
+                        segments.max=segments.max, 
+                        degree.min=degree.min, 
+                        segments.min=segments.min, 
+                        restart=0,
+                        num.restarts=0,
+                        j=j,
+                        nrow.KI.mat=nrow.KI.mat,
+                        t2=Sys.time(),
+                        complexity=complexity,
+                        knots=knots,
+                        basis="glp",
+                        cv.func=cv.func)
+
+      if(output < cv.vec[j]) {
+        cv.vec[j] <- output
+        basis.vec[j] <- "glp"
       }
 
     } else {

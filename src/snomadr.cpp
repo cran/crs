@@ -707,23 +707,34 @@ extern "C" {
 
 						SEXP sx0 = getListElement(args, "x0");  //we may use this as  best_x
 
-						if(LENGTH(sx0) == N)    /* x0 as one of the  initial points */
-						{
-								for( i=0;i<N;i++) {
-										(*x0_pts[0])[i]= REAL(sx0)[i];
-								}
-						}
-						else {
+					 if(!isNull(sx0))
+					 {
+							 if(LENGTH(sx0) == N)    /* x0 as the first initial point. */
+							 {
+									 for( i=0;i<N;i++) {
+											 (*x0_pts[0])[i]= REAL(sx0)[i];
+									 }
+							 }   /* all initial points are input. please note the memory order of an array ( 
+											it seems that R uses the Fortran style.).*/
+							 else if((LENGTH(sx0)  >=  N*nmulti) && (nmulti > 1) ) {
+									 for (int j=0; j< nmulti; j++) {
+											 for( i=0;i<N;i++) {
+													 (*x0_pts[j])[i]= REAL(sx0)[j+i*nmulti];
+											 }
+									 }
+							 }
+					 }
+					 else {
 
-								// read best_x.txt:
-								ifstream fin ( "best_x.txt");
+							 // read best_x.txt:
+							 ifstream fin ( "best_x.txt");
 
-								if ( !fin.fail() )
-										for ( i = 0 ; i < N ; ++i )
-												fin >> (*x0_pts[0])[i];
+							 if ( !fin.fail() )
+									 for ( i = 0 ; i < N ; ++i )
+											 fin >> (*x0_pts[0])[i];
 
 								fin.close();
-						}
+					 }
 
 						SEXP sbbout = getListElement(args, "bbout");
 
@@ -789,7 +800,7 @@ extern "C" {
 
 								// displays and remember the best point:
 								if( print_output > 0 ) 
-										out << "run #" << setw(2) << i << ": ";
+										out << "\rrun #" << setw(2) << i << ": ";
 								cur_x = mads.get_best_feasible();
 								if ( cur_x ) {
 
@@ -837,10 +848,10 @@ extern "C" {
 								out << endl << endl;
 						}
 
-						ofstream fout ( "best_x.txt" );
-						fout << setprecision(32);
-						best_x.display ( fout , " " , -1 , -1 );
-						fout.close();
+						//ofstream fout ( "best_x.txt" );
+						//fout << setprecision(32);
+						//best_x.display ( fout , " " , -1 , -1 );
+						//fout.close();
 
 						// delete x0 points:
 						for ( i = 0 ; i < nmulti ; ++i )

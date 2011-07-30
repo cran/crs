@@ -18,10 +18,9 @@ crs(\dots)
     include = NULL,
     kernel = TRUE,
     lambda = NULL,
-    kernel.type = c("nominal","ordinal"),
     complexity = c("degree-knots","degree","knots"),
     knots = c("quantiles","uniform"),
-    basis = c("additive","tensor","auto"),
+    basis = c("additive","tensor","glp","auto"),
     deriv = 0,
     data.return = FALSE,
     prune = FALSE,
@@ -37,13 +36,13 @@ crs(\dots)
     degree.min = 0, 
     segments.min = 1, 
     cv = c("nomad","exhaustive","none"),
+    cv.threshold=1000,
     cv.func = c("cv.ls","cv.gcv","cv.aic"),
     kernel = TRUE,
     lambda = NULL,
-    kernel.type = c("nominal","ordinal"),
     complexity = c("degree-knots","degree","knots"),
     knots = c("quantiles","uniform"),
-    basis = c("additive","tensor","auto"),
+    basis = c("additive","tensor","glp","auto"),
     deriv = 0,
     data.return = FALSE,
     prune = FALSE,
@@ -77,13 +76,6 @@ curve)}
 nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}}) predictors
 in \code{x} are included or omitted from the resulting estimate }
 
-  \item{kernel.type}{
-    a character string indicating whether the kernel
-    for the discrete predictors \code{z} should be unordered
-    (default \dQuote{\code{nominal}}) or ordered
-    (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
-  }
-  
   \item{lambda}{ a vector of bandwidths for each dimension of the
   categorical \code{z}}
   
@@ -96,6 +88,14 @@ in \code{x} are included or omitted from the resulting estimate }
   whether to use nonsmooth mesh adaptive direct search, exhaustive
   search, or no search (i.e. use user supplied values for \code{degree},
   \code{segments}, and \code{lambda}) }
+
+\item{cv.threshold}{ an integer (default \code{cv.threshold=1000}) for
+  simple problems with no categorical predictors
+  (i.e. \code{kernel=FALSE} otherwise
+  \code{\link{optim}}/\code{\link{snomadr}} search is necessary) such
+  that, if the number of combinations of \code{degree}/\code{segments}
+  is less than the threshold and \code{cv="nomad"}, instead use
+  exhaustive search (\code{cv="exhaustive"}) }
 
   \item{cv.func}{a character string (default \code{cv.func="cv.ls"})
     indicating which method to use to select smoothing
@@ -142,15 +142,15 @@ in \code{x} are included or omitted from the resulting estimate }
 
 \item{basis}{ a character string (default \code{basis="additive"})
     indicating whether the additive or tensor product B-spline basis
-    matrix for a multivariate polynomial spline should be used. Note
-    this can be automatically determined by cross-validation if
-    \code{cv="nomad"} or \code{cv="exhaustive"} and \code{basis="auto"},
-    and is an \sQuote{all or none} proposition (i.e. interaction terms
-    for all predictors or for no predictors given the nature of
-    \sQuote{tensor products}). Note also that if there is only one
-    predictor this defaults to \code{basis="additive"} to avoid
-    unnecessary computation as the spline bases are equivalent in this
-    case }
+    matrix for a multivariate polynomial spline or generalized B-spline
+    polynomial basis should be used. Note this can be automatically
+    determined by cross-validation if \code{cv="nomad"} or
+    \code{cv="exhaustive"} and \code{basis="auto"}, and is an
+    \sQuote{all or none} proposition (i.e. interaction terms for all
+    predictors or for no predictors given the nature of \sQuote{tensor
+    products}). Note also that if there is only one predictor this
+    defaults to \code{basis="additive"} to avoid unnecessary computation
+    as the spline bases are equivalent in this case }
 
   \item{deriv}{ an integer \code{l} (default \code{deriv=0}) specifying
   whether to compute the univariate \code{l}th partial derivative for
@@ -197,14 +197,9 @@ in \code{x} are included or omitted from the resulting estimate }
   Typical usages are (see below for a  list of options and also
   the examples at the end of this help file)
   \preformatted{
-    ## Categorical data should be cast before call (necessary for plot method)
-    z <- factor(z) 
-    model <- crs(y~x+z,basis="auto")
+    model <- crs(y~x1+x2,basis="auto")
     
-    ## Categorical data should be cast before call (necessary for plot method)
-    z1 <- factor(z1)
-    z2 <- factor(z2)
-    model <- crs(y~x1+x2+z1+z2,cv="none",degree=c(3,4),lambda=c(.1,.2))
+    model <- crs(y~x1+factor(x2),cv="none",degree=3,segments=1,lambda=.1)
     }
     
   \code{crs} computes a regression spline estimate of a one (1)
@@ -234,7 +229,7 @@ in \code{x} are included or omitted from the resulting estimate }
 
   When \code{cv="nomad"}, numerical search is undertaken using Nonsmooth
   Optimization by Mesh Adaptive Direct Search (Abramson, Audet, Couture,
-  Dennis, Jr., and Le Digabel (2011).
+  Dennis, Jr., and Le Digabel (2011)).
   
   When \code{kernel=TRUE} and \code{cv="exhaustive"}, numerical search
   is undertaken using \code{\link{optim}} and the box-constrained
@@ -281,9 +276,11 @@ in \code{x} are included or omitted from the resulting estimate }
     \code{\link{fitted}} and \code{\link{residuals}} extract (or
     generate) estimated values and residuals. Furthermore, the functions
     \code{\link{summary}}, \code{\link{predict}}, and \code{\link{plot}}
-    (options \code{mean=FALSE}, \code{deriv=FALSE}, \code{ci=FALSE},
-    \code{plot.behavior=c("plot","plot-data","data")}) support objects
-    of this type. The returned object has the following components:
+    (options \code{mean=FALSE}, \code{deriv=i} where \eqn{i} is an
+    integer, \code{ci=FALSE}, \code{persp.rgl=FALSE},
+    \code{plot.behavior=c("plot","plot-data","data")},
+    \code{xtrim=0.0},\code{xq=0.5}) support objects of this type. The
+    returned object has the following components:
 
   \item{fitted.values}{ estimates of the regression function
     (conditional mean) at the sample points or evaluation points }
@@ -352,11 +349,6 @@ in \code{x} are included or omitted from the resulting estimate }
   
 \section{Usage Issues}{
 
-  In order for \code{\link{plot}} to function properly with the options
-  \code{mean=TRUE} and \code{deriv=TRUE}, you need to properly cast your
-  categorical predictors prior to listing them in the
-  \code{\link{formula}} interface.
-  
   Note that when \code{kernel=FALSE} \code{\link{summary}} supports the
   option \code{sigtest=TRUE} that conducts an F-test for significance
   for each predictor.
@@ -403,7 +395,7 @@ in \code{x} are included or omitted from the resulting estimate }
 }
 
 \examples{
-set.seed(123)
+set.seed(42)
 ## Example - simulated data
 n <- 1000
 num.eval <- 50

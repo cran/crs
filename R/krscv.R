@@ -1,18 +1,12 @@
-## This function conducts kernel regression spline
-## cross-validation. It takes as input a data.frame xz containing a
-## mix of numeric and factor predictors and a vector y. A range of
-## arguments can be provided, and one can do search on the bandwidths
-## and both the degree and knots ("degree-knots") or the degree
-## holding the number of knots (segments+1) constant or the number of
-## knots (segments+1) holding the degree constant. Two basis types are
-## supported ("additive" or "tensor") and the argument "auto" will
-## choose the basis type automatically.
-
-## Currently search is exhaustive taking basis.maxdim as the maximum
-## number of the spline degree (0,1,...) and number of segments
-## (1,2,...). This is a quadratic integer programming problem so
-## ideally I require an IQP (MIQP for kernel-weighting)
-## solver. Currently in R there is no such beast.
+## This function conducts kernel regression spline cross-validation
+## using exhaustive search. It takes as input a data.frame xz
+## containing a mix of numeric and factor predictors and a vector y. A
+## range of arguments can be provided, and one can do search on the
+## bandwidths and both the degree and knots ("degree-knots") or the
+## degree holding the number of knots (segments+1) constant or the
+## number of knots (segments+1) holding the degree constant. Three
+## basis types are supported ("additive", "glp" or "tensor") and the
+## argument "auto" will choose the basis type automatically.
 
 krscv <- function(xz,
                   y,
@@ -20,11 +14,10 @@ krscv <- function(xz,
                   segments.max=10, 
                   degree.min=0, 
                   segments.min=1, 
-                  kernel.type=c("nominal","ordinal"),
                   restarts=0,
                   complexity=c("degree-knots","degree","knots"),
                   knots=c("quantiles","uniform"),
-                  basis=c("additive","tensor","auto"),
+                  basis=c("additive","tensor","glp","auto"),
                   cv.func=c("cv.ls","cv.gcv","cv.aic"),
                   degree=degree,
                   segments=segments) {
@@ -35,8 +28,6 @@ krscv <- function(xz,
   cv.func <- match.arg(cv.func)  
 
   ## First define the cv function to be fed to optim
-
-  kernel.type <- match.arg(kernel.type)
 
   t1 <- Sys.time()
 
@@ -55,7 +46,7 @@ krscv <- function(xz,
                       ind,
                       ind.vals,
                       nrow.z.unique,
-                      kernel.type,
+                      is.ordered.z,
                       j=NULL,
                       nrow.K.mat=NULL,
                       t2=NULL,
@@ -91,7 +82,7 @@ krscv <- function(xz,
                            ind=ind,
                            ind.vals=ind.vals,
                            nrow.z.unique=nrow.z.unique,
-                           kernel.type=kernel.type,
+                           is.ordered.z=is.ordered.z,
                            knots=knots,
                            basis=basis,
                            cv.func=cv.func)
@@ -104,13 +95,13 @@ krscv <- function(xz,
     if(complexity=="degree") {
       if(!is.null(j)) {
         if(j==1) {
-          tmp.1 <- paste(j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
         } else {
           dt <- (t2-t1)*(nrow.K.mat-j+1)/j
           tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
                          fw.format.2(as.numeric((t2-t1),units="mins")),
                          "m",sep="")
-          tmp.1 <- paste(j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
         }
       } else {
         tmp.1 <- paste("d[1]=", K[1,1],sep="")
@@ -119,13 +110,13 @@ krscv <- function(xz,
     } else  if(complexity=="knots") {
       if(!is.null(j)) {
         if(j==1) {
-          tmp.1 <- paste(j,"/",nrow.K.mat,", s[1]=",K[1,2],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,", s[1]=",K[1,2],sep="")
         } else {
           dt <- (t2-t1)*(nrow.K.mat-j+1)/j
           tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
                          fw.format.2(as.numeric((t2-t1),units="mins")),
                          "m",sep="")
-          tmp.1 <- paste(j,"/",nrow.K.mat,tmp.0,", s[1]=",K[1,2],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", s[1]=",K[1,2],sep="")
         }
       } else {
         tmp.1 <- paste("s[1]=", K[1,2],sep="")
@@ -134,13 +125,13 @@ krscv <- function(xz,
     } else  if(complexity=="degree-knots") {
       if(!is.null(j)) {
         if(j==1) {
-          tmp.1 <- paste(j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
         } else {
           dt <- (t2-t1)*(nrow.K.mat-j+1)/j
           tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
                          fw.format.2(as.numeric((t2-t1),units="mins")),
                          "m",sep="")
-          tmp.1 <- paste(j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
         }
       } else {
         tmp.1 <- paste("d[1]=", K[1,1],sep="")
@@ -172,9 +163,9 @@ krscv <- function(xz,
   x <- xztmp$x
   z <- xztmp$z
   if(is.null(z)) stop(" categorical kernel smoothing requires ordinal/nominal predictors")
-
   z <- as.matrix(xztmp$z)
   num.z <- NCOL(z)
+  is.ordered.z <- xztmp$is.ordered.z
   z.unique <- uniquecombs(z)
   ind <-  attr(z.unique,"index")
   ind.vals <-  unique(ind)
@@ -194,7 +185,7 @@ krscv <- function(xz,
   ## predictor (i.e. num.x==1) disable auto, set to additive (which is
   ## tensor in this case, so don't waste time doing both).
 
-  if(num.x==1 & basis == "auto") basis <- "additive"
+  if((num.x==1) && (basis == "auto")) basis <- "additive"
 
   if(degree.min < 0 ) degree.min <- 0
   if(segments.min < 1 ) segments.min <- 1
@@ -270,7 +261,7 @@ krscv <- function(xz,
                         ind=ind,
                         ind.vals=ind.vals,
                         nrow.z.unique=nrow.z.unique,
-                        kernel.type=kernel.type,
+                        is.ordered.z=is.ordered.z,
                         j=j,
                         nrow.K.mat=nrow.K.mat,
                         t2=t2,
@@ -308,7 +299,7 @@ krscv <- function(xz,
                                     ind=ind,
                                     ind.vals=ind.vals,
                                     nrow.z.unique=nrow.z.unique,
-                                    kernel.type=kernel.type,
+                                    is.ordered.z=is.ordered.z,
                                     j=j,
                                     nrow.K.mat=nrow.K.mat,
                                     t2=t2,
@@ -356,7 +347,7 @@ krscv <- function(xz,
                         ind=ind,
                         ind.vals=ind.vals,
                         nrow.z.unique=nrow.z.unique,
-                        kernel.type=kernel.type,
+                        is.ordered.z=is.ordered.z,
                         j=j,
                         nrow.K.mat=nrow.K.mat,
                         t2=t2,
@@ -394,7 +385,7 @@ krscv <- function(xz,
                                     ind=ind,
                                     ind.vals=ind.vals,
                                     nrow.z.unique=nrow.z.unique,
-                                    kernel.type=kernel.type,
+                                    is.ordered.z=is.ordered.z,
                                     j=j,
                                     nrow.K.mat=nrow.K.mat,
                                     t2=t2,
@@ -417,9 +408,7 @@ krscv <- function(xz,
         lambda.mat[j,] <- output$par
       }
 
-    } else { ## end auto
-
-      ## Either basis=="additive" or "tensor"
+      ## Next, basis=="glp"
 
       output$convergence <- 42
 
@@ -444,7 +433,96 @@ krscv <- function(xz,
                         ind=ind,
                         ind.vals=ind.vals,
                         nrow.z.unique=nrow.z.unique,
-                        kernel.type=kernel.type,
+                        is.ordered.z=is.ordered.z,
+                        j=j,
+                        nrow.K.mat=nrow.K.mat,
+                        t2=t2,
+                        complexity=complexity,
+                        knots=knots,
+                        basis="glp",
+                        cv.func=cv.func)
+
+      }
+
+      if(restarts > 0) {
+
+        for(r in 1:restarts) {
+
+          output.restart$convergence <- 42
+
+          while(output.restart$convergence != 0) {
+
+            output.restart <- optim(par=runif(num.z),
+                                    cv.objc,
+                                    lower=rep(0,num.z),
+                                    upper=rep(1,num.z),
+                                    method="L-BFGS-B",
+                                    x=x,
+                                    y=y,
+                                    z=z,
+                                    K=K.mat[j,],
+                                    degree.max=degree.max, 
+                                    segments.max=segments.max, 
+                                    degree.min=degree.min, 
+                                    segments.min=segments.min, 
+                                    restart=r,
+                                    num.restarts=restarts,
+                                    z.unique=z.unique,
+                                    ind=ind,
+                                    ind.vals=ind.vals,
+                                    nrow.z.unique=nrow.z.unique,
+                                    is.ordered.z=is.ordered.z,
+                                    j=j,
+                                    nrow.K.mat=nrow.K.mat,
+                                    t2=t2,
+                                    complexity=complexity,
+                                    knots=knots,
+                                    basis="glp",
+                                    cv.func=cv.func)
+
+          }
+
+          if(output.restart$value < output$value) output <- output.restart
+
+        }
+
+      } ## end restarts
+
+      if(output$value < cv.vec[j]) {
+        cv.vec[j] <- output$value
+        basis.vec[j] <- "glp"
+        lambda.mat[j,] <- output$par
+      }
+      
+
+    } else { ## end auto
+
+      ## Either basis=="additive" or "tensor" or "glp"
+
+      output$convergence <- 42
+
+      while(output$convergence != 0) {
+
+        output <- optim(par=runif(num.z),
+                        cv.objc,
+                        lower=rep(0,num.z),
+                        upper=rep(1,num.z),
+                        method="L-BFGS-B",
+                        x=x,
+                        y=y,
+                        z=z,
+                        K=K.mat[j,],
+                        degree.max=degree.max, 
+                        segments.max=segments.max, 
+                        degree.min=degree.min, 
+                        segments.min=segments.min, 
+                        restart=0,
+                        num.restarts=restarts,
+                        z.unique=z.unique,
+                        ind=ind,
+                        ind.vals=ind.vals,
+                        nrow.z.unique=nrow.z.unique,
+                        is.ordered.z=is.ordered.z,
                         j=j,
                         nrow.K.mat=nrow.K.mat,
                         t2=t2,
@@ -482,7 +560,7 @@ krscv <- function(xz,
                                     ind=ind,
                                     ind.vals=ind.vals,
                                     nrow.z.unique=nrow.z.unique,
-                                    kernel.type=kernel.type,
+                                    is.ordered.z=is.ordered.z,
                                     j=j,
                                     nrow.K.mat=nrow.K.mat,
                                     t2=t2,

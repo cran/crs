@@ -6,11 +6,13 @@ import(stats)
 export(crs,
        crsiv,
        frscv,
-			 frscvNOMAD, 
+       frscvNOMAD, 
        gsl.bs,
        krscv,
-			 krscvNOMAD,
+       krscvNOMAD,
+       npglpreg,
        snomadr,
+       glp.model.matrix,       
        tensor.prod.model.matrix,
        uniquecombs)
 
@@ -29,3 +31,10 @@ S3method(gsl.bs, default)
 S3method(predict, gsl.bs)
 
 S3method(print, snomadr)
+
+S3method(npglpreg, formula)
+S3method(npglpreg, default)
+S3method(predict, npglpreg)
+S3method(print, npglpreg)
+S3method(summary, npglpreg)
+S3method(plot, npglpreg)

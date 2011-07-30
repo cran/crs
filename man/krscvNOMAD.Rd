@@ -1,4 +1,3 @@
-% $ID$
 \name{krscvNOMAD}
 \alias{krscvNOMAD}
 
@@ -21,10 +20,9 @@ krscvNOMAD(xz,
            segments.max = 10, 
            degree.min = 0, 
            segments.min = 1, 
-           kernel.type = c("nominal","ordinal"),
            complexity = c("degree-knots","degree","knots"),
            knots = c("quantiles","uniform"),
-           basis = c("additive","tensor","auto"),
+           basis = c("additive","tensor","glp","auto"),
            cv.func = c("cv.ls","cv.gcv","cv.aic"),
            degree = degree,
            segments = segments,
@@ -55,13 +53,6 @@ krscvNOMAD(xz,
   \item{segments.min}{ the minimum segments of the B-spline basis for
     each of the continuous predictors (default \code{segments.min=1})}
 
-  \item{kernel.type}{
-    a character string indicating whether the kernel
-    for the discrete predictors \code{z} should be unordered
-    (default \dQuote{\code{nominal}}) or ordered
-    (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
-  }
-  
   \item{complexity}{a character string (default
   \code{complexity="degree-knots"}) indicating whether model `complexity' is
   determined by the degree of the spline or by the number of segments
@@ -78,14 +69,15 @@ krscvNOMAD(xz,
 
   \item{basis}{ a character string (default \code{basis="additive"})
     indicating whether the additive or tensor product B-spline basis
-    matrix for a multivariate polynomial spline should be used. Note
-    this can be automatically determined by cross-validation if
-    \code{cv=TRUE} and \code{basis="auto"}, and is an \sQuote{all or
-    none} proposition (i.e. interaction terms for all predictors or for
-    no predictors given the nature of \sQuote{tensor products}). Note
-    also that if there is only one predictor this defaults to
-    \code{basis="additive"} to avoid unnecessary computation as the
-    spline bases are equivalent in this case }
+    matrix for a multivariate polynomial spline or generalized B-spline
+    polynomial basis should be used. Note this can be automatically
+    determined by cross-validation if \code{cv=TRUE} and
+    \code{basis="auto"}, and is an \sQuote{all or none} proposition
+    (i.e. interaction terms for all predictors or for no predictors
+    given the nature of \sQuote{tensor products}). Note also that if
+    there is only one predictor this defaults to \code{basis="additive"}
+    to avoid unnecessary computation as the spline bases are equivalent
+    in this case }
 
   \item{cv.func}{a character string (default \code{cv.func="cv.ls"})
     indicating which method to use to select smoothing
@@ -124,12 +116,15 @@ krscvNOMAD(xz,
 
 \details{
 
-  \code{krscvNOMAD} computes cross-validation for a regression spline
-  estimate of a one (1) dimensional dependent variable on an
-  \code{r}-dimensional vector of continuous and nominal/ordinal
-  (\code{\link{factor}}/\code{\link{ordered}}) predictors. The optimal
-  \code{K}/\code{lambda} combination is returned along with other
-  results (see below for return values). The method uses kernel
+  \code{krscvNOMAD} computes NOMAD-based cross-validation for a
+  regression spline estimate of a one (1) dimensional dependent variable
+  on an \code{r}-dimensional vector of continuous and nominal/ordinal
+  (\code{\link{factor}}/\code{\link{ordered}}) predictors.  Numerical
+  search for the optimal \code{degree}/\code{segments}/\code{lambda} is
+  undertaken using \code{\link{snomadr}}.
+  
+  The optimal \code{K}/\code{lambda} combination is returned along with
+  other results (see below for return values). The method uses kernel
   functions appropriate for categorical (ordinal/nominal) predictors
   which avoids the loss in efficiency associated with sample-splitting
   procedures that are typically used when faced with a mix of continuous
@@ -144,15 +139,6 @@ krscvNOMAD(xz,
 
   For the discrete predictors the product kernel function is of the
   \sQuote{Li-Racine} type (see Li and Racine (2007) for details).
-  
-  Numerical search for the optimal
-  \code{degree}/\code{segments}/\code{lambda} is undertaken using
-  \code{\link{snomadr}}.
-  
-  Note that, since the approach is built on top of the regression spline
-  for each unique \code{z} combination, the splines must be estimable
-  for all every unique \code{z} combination. When this is not the case
-  the user must combine data in a manner such that this is achieved.
   
 }
 
@@ -214,7 +200,7 @@ krscvNOMAD(xz,
 }
 
 \author{
-  Jeffrey S. Racine \email{racinej@mcmaster.ca},  Zhenghua Nie <niez@mcmaster.ca>
+  Jeffrey S. Racine \email{racinej@mcmaster.ca} and Zhenghua Nie \email{niez@mcmaster.ca}
 }
 
 %\section{Usage Issues}{
@@ -225,7 +211,7 @@ krscvNOMAD(xz,
 }
 
 \examples{
-set.seed(123)
+set.seed(42)
 ## Simulated data
 n <- 1000
 

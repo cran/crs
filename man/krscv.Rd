@@ -1,4 +1,3 @@
-% $ID$
 \name{krscv}
 \alias{krscv}
 
@@ -21,11 +20,10 @@ krscv(xz,
       segments.max=10,
       degree.min=0,
       segments.min=1, 
-      kernel.type = c("nominal","ordinal"),
       restarts = 0,
       complexity = c("degree-knots","degree","knots"),
       knots = c("quantiles","uniform"),
-      basis = c("additive","tensor","auto"),
+      basis = c("additive","tensor","glp","auto"),
       cv.func = c("cv.ls","cv.gcv","cv.aic"),
       degree = degree,
       segments = segments)
@@ -52,13 +50,6 @@ krscv(xz,
   \item{segments.min}{ the minimum segments of the B-spline basis for
     each of the continuous predictors (default \code{segments.min=1})}
 
-  \item{kernel.type}{
-    a character string indicating whether the kernel
-    for the discrete predictors \code{z} should be unordered
-    (default \dQuote{\code{nominal}}) or ordered
-    (\dQuote{\code{ordinal}}) - see \code{\link{crs}} for details
-  }
-  
   \item{restarts}{
     number of times to restart \code{\link{optim}} from different initial
     random values (default \code{restarts=0}) when searching for optimal
@@ -82,14 +73,15 @@ krscv(xz,
 
   \item{basis}{ a character string (default \code{basis="additive"})
     indicating whether the additive or tensor product B-spline basis
-    matrix for a multivariate polynomial spline should be used. Note
-    this can be automatically determined by cross-validation if
-    \code{cv=TRUE} and \code{basis="auto"}, and is an \sQuote{all or
-    none} proposition (i.e. interaction terms for all predictors or for
-    no predictors given the nature of \sQuote{tensor products}). Note
-    also that if there is only one predictor this defaults to
-    \code{basis="additive"} to avoid unnecessary computation as the
-    spline bases are equivalent in this case }
+    matrix for a multivariate polynomial spline or generalized B-spline
+    polynomial basis should be used. Note this can be automatically
+    determined by cross-validation if \code{cv=TRUE} and
+    \code{basis="auto"}, and is an \sQuote{all or none} proposition
+    (i.e. interaction terms for all predictors or for no predictors
+    given the nature of \sQuote{tensor products}). Note also that if
+    there is only one predictor this defaults to \code{basis="additive"}
+    to avoid unnecessary computation as the spline bases are equivalent
+    in this case }
 
   \item{cv.func}{a character string (default \code{cv.func="cv.ls"})
     indicating which method to use to select smoothing
@@ -110,8 +102,8 @@ krscv(xz,
 
 \details{
 
-  \code{krscv} computes cross-validation for a regression spline
-  estimate of a one (1) dimensional dependent variable on an
+  \code{krscv} computes exhaustive cross-validation for a regression
+  spline estimate of a one (1) dimensional dependent variable on an
   \code{r}-dimensional vector of continuous and nominal/ordinal
   (\code{\link{factor}}/\code{\link{ordered}}) predictors. The optimal
   \code{K}/\code{lambda} combination is returned along with other
@@ -146,11 +138,6 @@ krscv(xz,
   user ought to restart their search with a larger value of
   \code{degree.max}/\code{segments.max}.
 
-  Note that, since the approach is built on top of the regression spline
-  for each unique \code{z} combination, the splines must be estimable
-  for all every unique \code{z} combination. When this is not the case
-  the user must combine data in a manner such that this is achieved.
-  
 }
 
 \value{
@@ -204,7 +191,7 @@ krscv(xz,
 }
 
 \examples{
-set.seed(123)
+set.seed(42)
 ## Simulated data
 n <- 1000
 
