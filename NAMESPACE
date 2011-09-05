@@ -5,6 +5,7 @@ useDynLib(crs, snomadRInfo)
 import(stats)
 export(crs,
        crsiv,
+       crssigtest,
        frscv,
        frscvNOMAD, 
        gsl.bs,
@@ -15,6 +16,9 @@ export(crs,
        glp.model.matrix,       
        tensor.prod.model.matrix,
        uniquecombs)
+
+S3method(print,sigtest)
+S3method(summary,sigtest)
 
 S3method(crs, formula)
 S3method(crs, default)

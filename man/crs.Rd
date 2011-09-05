@@ -197,9 +197,25 @@ in \code{x} are included or omitted from the resulting estimate }
   Typical usages are (see below for a  list of options and also
   the examples at the end of this help file)
   \preformatted{
+    ## Estimate the model and let the basis type be determined by
+    ## cross-validation (i.e. cross-validation will determine whether to
+    ## use the additive, generalized, or tensor product basis)
+    
     model <- crs(y~x1+x2,basis="auto")
     
+    ## Estimate the model for a specified degree/segment/bandwidth
+    ## combination and do not run cross-validation (will use the
+    ## additive basis by default)
+    
     model <- crs(y~x1+factor(x2),cv="none",degree=3,segments=1,lambda=.1)
+    
+    ## Plot the mean and (asymptotic) error bounds
+
+    plot(model,mean=TRUE,ci=TRUE)
+
+    ## Plot the first partial derivative and (asymptotic) error bounds
+
+    plot(model,deriv=1,ci=TRUE)    
     }
     
   \code{crs} computes a regression spline estimate of a one (1)
@@ -311,7 +327,8 @@ in \code{x} are included or omitted from the resulting estimate }
   
   \item{call}{ a symbolic description of the model  }
   
-  \item{r.squared}{ coefficient of determination }
+  \item{r.squared}{ coefficient of determination (Doksum and Samarov
+  (1995)) }
 
   \item{model.lm}{ an object of \sQuote{\code{\link{class}}}
   \sQuote{\code{\link{lm}}} if \code{kernel=FALSE} or a list of objects
@@ -345,6 +362,9 @@ in \code{x} are included or omitted from the resulting estimate }
 
   \item{hatvalues}{ the \code{\link{hatvalues}} for the estimated model}
 
+  \item{P.hat}{ the kernel probability estimates corresponding to the
+  categorical predictors in the estimated model }
+
 }
   
 \section{Usage Issues}{
@@ -361,7 +381,11 @@ in \code{x} are included or omitted from the resulting estimate }
   http://www.gerad.ca/nomad.
 
   Craven, P. and G. Wahba (1979), \dQuote{Smoothing noisy data with
-  spline functions,} Numerische Mathematik, 13, 377-403.
+    spline functions,} Numerische Mathematik, 13, 377-403.
+
+  Doksum, K. and A. Samarov (1995), \dQuote{Nonparametric Estimation of
+  Global Functionals and a Measure of the Explanatory Power of
+  Covariates in Regression,} The Annals of Statistics, 23 1443-1473.
 
   Hurvich, C.M. and J.S. Simonoff and C.L. Tsai (1998),
   \dQuote{Smoothing parameter selection in nonparametric regression
