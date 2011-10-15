@@ -16,7 +16,7 @@ frscvNOMAD <- function(xz,
                        degree.min=0, 
                        segments.min=1, 
                        complexity=c("degree-knots","degree","knots"),
-                       knots=c("quantiles","uniform"),
+                       knots=c("quantiles","uniform", "auto"),
                        basis=c("additive","tensor","glp","auto"),
                        cv.func=c("cv.ls","cv.gcv","cv.aic"),
                        degree=degree,
@@ -121,52 +121,53 @@ frscvNOMAD <- function(xz,
             basis.opt <-  basis;
             if(basis=="auto"){
                 basis.opt <-"additive"
-                cv <- cv.factor.spline(x=x,
-                                       y=y,
-                                       z=z,
-                                       K=K,
-                                       I=I,
-                                       knots=knots,
-                                       basis=basis.opt,
-                                       cv.func=cv.func)
 
-                cv.tensor <- cv.factor.spline(x=x,
-                                              y=y,
-                                              z=z,
-                                              K=K,
-                                              I=I,
-                                              knots=knots,
-                                              basis="tensor",
-                                              cv.func=cv.func)
+                cv <- cv.factor.spline.wrapper(x=x,
+                                               y=y,
+                                               z=z,
+                                               K=K,
+                                               I=I,
+                                               knots=knots,
+                                               basis=basis.opt,
+                                               cv.func=cv.func)
+                
+                cv.tensor <- cv.factor.spline.wrapper(x=x,
+                                                      y=y,
+                                                      z=z,
+                                                      K=K,
+                                                      I=I,
+                                                      knots=knots,
+                                                      basis="tensor",
+                                                      cv.func=cv.func)
                 if(cv>cv.tensor){
-                    cv <- cv.tensor
+                  cv <- cv.tensor
                     basis.opt <-"tensor"
                 }
 
-                cv.glp <- cv.factor.spline(x=x,
-                                              y=y,
-                                              z=z,
-                                              K=K,
-                                              I=I,
-                                              knots=knots,
-                                              basis="glp",
-                                              cv.func=cv.func)
+                cv.glp <- cv.factor.spline.wrapper(x=x,
+                                                   y=y,
+                                                   z=z,
+                                                   K=K,
+                                                   I=I,
+                                                   knots=knots,
+                                                   basis="glp",
+                                                   cv.func=cv.func)
                 if(cv>cv.glp){
                     cv <- cv.glp
                     basis.opt <-"glp"
                 }
                 
+            } else {
+              cv <- cv.factor.spline.wrapper(x=x,
+                                             y=y,
+                                             z=z,
+                                             K=K,
+                                             I=I,
+                                             knots=knots,
+                                             basis=basis.opt,
+                                             cv.func=cv.func)
             }
-            else {
-                cv <- cv.factor.spline(x=x,
-                                       y=y,
-                                       z=z,
-                                       K=K,
-                                       I=I,
-                                       knots=knots,
-                                       basis=basis.opt,
-                                       cv.func=cv.func)
-            }
+
             attr(cv, "basis.opt")<-basis.opt
 
             console <- newLineConsole()
@@ -274,8 +275,14 @@ frscvNOMAD <- function(xz,
                           print.output=print.output, 
                           params=params);
 
-        if(basis == "auto") 
-        attr(solution, "basis.opt") <- attributes(eval.cv(solution$solution, params))$basis.opt
+        if(basis == "auto") {
+						cv.basis <- eval.cv(solution$solution, params)
+						attr(solution, "basis.opt") <- attributes(cv.basis)$basis.opt
+						if(knots == "auto") 
+								attr(solution, "knots.opt") <- attributes(cv.basis)$knots.opt
+				} 
+				else if(knots == "auto") 
+						attr(solution, "knots.opt") <- attributes(eval.cv(solution$solution, params))$knots.opt
 
         solution$degree.max.vec <- degree.max.vec
 
@@ -441,6 +448,9 @@ frscvNOMAD <- function(xz,
 
     basis.opt <- basis
     if(basis == "auto") basis.opt <- attributes(nomad.solution)$basis.opt
+
+		knots.opt <- knots
+    if(knots == "auto") knots.opt <- attributes(nomad.solution)$knots.opt
     
     cv.vec <- NULL
     basis.vec <- NULL
@@ -455,7 +465,7 @@ frscvNOMAD <- function(xz,
           degree.min=degree.min, 
           segments.min=segments.min, 
           complexity=complexity,
-          knots=knots,
+          knots=knots.opt,
           degree=degree,
           segments=segments,
           K.mat=KI.mat,
