@@ -27,9 +27,12 @@ krscvNOMAD(xz,
            degree = degree,
            segments = segments,
            lambda = lambda, 
+           lambda.discrete = FALSE, 
+           lambda.discrete.num = 100, 
            random.seed = 42,
            opts = list(),
-           nmulti = 0)
+           nmulti = 0,
+           tau = NULL)
 }
 
 \arguments{
@@ -95,8 +98,16 @@ krscvNOMAD(xz,
   the B-spline basis for each dimension of the continuous \code{x}
   (i.e. number of knots minus one)}
 
-  \item{lambda}{ real/vector for the categorical predictors. If it is not
-  NULL,  it will be a starting value of lambda}
+  \item{lambda}{ real/vector for the categorical predictors. If it is
+  not NULL, it will be the starting value(s) for lambda}
+
+  \item{lambda.discrete}{ if \code{lambda.discrete=TRUE}, the bandwidth
+      will be discretized into \code{lambda.discrete.num+1} points and
+      \code{lambda} will be chosen from these points}
+  
+  \item{lambda.discrete.num}{a positive integer indicating the number of
+  discrete values that lambda can assume - this parameter will only be
+  used when \code{lambda.discrete=TRUE}}
 
 \item{random.seed}{
   when it is not missing and not equal to 0, the initial points  will 
@@ -113,6 +124,12 @@ krscvNOMAD(xz,
     points (default \code{nmulti=0})
   }
 
+  \item{tau}{
+    if non-null a number in (0,1) denoting the quantile for which a quantile
+    regression spline is to be estimated rather than estimating the
+    conditional mean (default \code{tau=NULL})
+  }
+  
 }
 
 \details{
@@ -173,9 +190,9 @@ krscvNOMAD(xz,
 
 \references{
 
-  M.A. Abramson, C. Audet, G. Couture, J.E. Dennis, Jr., and S. Le
-  Digabel (2011), \dQuote{The NOMAD project}. Software available at
-  http://www.gerad.ca/nomad.
+  Abramson, M.A. and C. Audet and G. Couture and J.E. Dennis Jr. and
+  S. Le Digabel (2011), \dQuote{The NOMAD project}. Software available
+  at http://www.gerad.ca/nomad.
 
   Craven, P. and G. Wahba (1979), \dQuote{Smoothing noisy data with
   spline functions,} Numerische Mathematik, 13, 377-403.
@@ -185,18 +202,18 @@ krscvNOMAD(xz,
     using an improved Akaike information criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
-  S. Le Digabel (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
+  Le Digabel, S. (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
   optimization with the MADS algorithm}. ACM Transactions on
   Mathematical Software, 37(4):44:1-44:15.
   
+  Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
+    Theory and Practice,} Princeton University Press.
+
   Ma, S. and J.S. Racine and L. Yang (2011), \dQuote{Spline Regression
   in the Presence of Categorical Predictors,} manuscript.
 
   Ma, S. and J.S. Racine (2011), \dQuote{Additive Regression Splines
   With Irrelevant Categorical and Continuous Regressors,} manuscript.
-
-  Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
-    Theory and Practice,} Princeton University Press.
 
 }
 

@@ -36,7 +36,7 @@ prod.spline <- function(x,
   ## column 1 and segments-1 for each dimension in column 2).
 
   x <- as.matrix(x)
-  K <- round(K) 
+  K <- round(K)
 
   n <- NROW(x)
   num.x <- NCOL(x)
@@ -121,13 +121,16 @@ prod.spline <- function(x,
       P <- tp[[1]]
       for(i in 2:NROW(tp)) P <- cbind(P,tp[[i]])
       dim.P.no.tensor <- NCOL(P)
-      ## Solely tensor if basis==tensor      
+      ## Solely tensor if basis==tensor
       if(basis=="tensor") P <- tensor.prod.model.matrix(tp)
       if(basis=="glp") {
         P <- glp.model.matrix(tp)
         if(deriv!=0) {
           P.deriv <- list()
           for(i in 1:length(tp)) P.deriv[[i]] <- matrix(0,1,ncol(tp[[i]]))
+          ## Nov 11 2011, DC, is this the last remaining issue for derivs?
+          deriv.index <- deriv.index - length(which((K[,1]==0)))
+          while(deriv.index[1]==0) deriv.index <- deriv.index + 1
           P.deriv[[deriv.index]] <- matrix(NA,1,ncol(tp[[deriv.index]]))
           P[,!is.na(as.numeric(glp.model.matrix(P.deriv)))] <- 0
         }
@@ -164,10 +167,14 @@ predict.kernel.spline <- function(x,
                                   zeval=NULL,
                                   knots=c("quantiles","uniform"),
                                   basis=c("additive","tensor","glp"),
-                                  model.return=FALSE){
+                                  model.return=FALSE,
+                                  tau=NULL){
 
   if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
-  if(!is.matrix(K)) stop(" K must be a two-column matrix")  
+  if(!is.matrix(K)) stop(" K must be a two-column matrix")
+
+  if(!is.null(tau)) if(tau <= 0) stop(" tau must be > 0")
+  if(!is.null(tau)) if(tau >= 1) stop(" tau must be < 1")
 
   basis <- match.arg(basis)
   knots <- match.arg(knots)
@@ -194,9 +201,15 @@ predict.kernel.spline <- function(x,
       P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
 
       if(basis=="additive" || basis=="glp") {
-        model <- lm(y~P)
+        if(is.null(tau))
+          model <- lm(y~P)
+        else
+          suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
       } else {
-        model <- lm(y~P-1)
+        if(is.null(tau))
+          model <- lm(y~P-1)
+        else
+          suppressWarnings(model <- rq(y~P-1,tau=tau,method="fn"))
       }
       if(is.null(xeval)) {
         fit.spline <- predict(model,interval="confidence",se.fit=TRUE)
@@ -209,7 +222,10 @@ predict.kernel.spline <- function(x,
 
       ## Degree == 0
 
-      model <- lm(y~1)
+      if(is.null(tau))
+        model <- lm(y~1)
+      else
+        suppressWarnings(model <- rq(y~1,tau=tau,method="fn"))
       if(is.null(xeval)) {
         fit.spline <- predict(model,interval="confidence",se.fit=TRUE)
       } else {
@@ -217,12 +233,22 @@ predict.kernel.spline <- function(x,
       }
     }
 
-    fit.spline <- cbind(fit.spline[[1]],se=fit.spline[[2]])
+    if(is.null(tau))
+      fit.spline <- cbind(fit.spline[[1]],se=fit.spline[[2]])
+    else
+      fit.spline <- cbind(fit.spline,se=ifelse(NCOL(fit.spline)>1,(fit.spline[,3]-fit.spline[,1])/1.96,NA))
 
-    htt <- hatvalues(model)
+    if(is.null(tau))
+      htt <- hatvalues(model)
+    else
+      htt <- hat(model$x)
+
     htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
 
-    rank <- model$rank
+    if(is.null(tau))
+      rank <- model$rank
+    else
+      rank <- NCOL(model$x)
 
   } else {
 
@@ -254,16 +280,32 @@ predict.kernel.spline <- function(x,
           P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
           k <- NCOL(P)
           if(basis=="additive" || basis=="glp") {
-            model.z.unique <- lm(y~P,weights=L)
+            if(is.null(tau))
+              model.z.unique <- lm(y~P,weights=L)
+            else
+              suppressWarnings(model.z.unique <- rq(y~P,weights=L,tau=tau,method="fn"))
+              model.z.unique.hat <- lm(y~P,weights=L)
           } else {
-            model.z.unique <- lm(y~P-1,weights=L)
+            if(is.null(tau))
+              model.z.unique <- lm(y~P-1,weights=L)
+            else
+              suppressWarnings(model.z.unique <- rq(y~P-1,weights=L,tau=tau,method="fn"))
+              model.z.unique.hat <- lm(y~P-1,weights=L)
           }
           if(model.return) model[[i]] <- model.z.unique
-          htt[zz] <- hatvalues(model.z.unique)[zz]
+          if(is.null(tau))
+            htt[zz] <- hatvalues(model.z.unique)[zz]
+          else
+            htt[zz] <- hatvalues(model.z.unique.hat)[zz]
+
           P.hat[zz] <- sum(L)
           P <- prod.spline(x=x,K=K,xeval=x[zz,,drop=FALSE],knots=knots,basis=basis)
           tmp <- predict(model.z.unique,newdata=data.frame(as.matrix(P)),interval="confidence",se.fit=TRUE)
-          fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+
+          if(is.null(tau))
+            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+          else
+            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/1.96)
           rm(tmp)
         }
       } else {
@@ -287,14 +329,25 @@ predict.kernel.spline <- function(x,
           P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
           k <- NCOL(P)
           if(basis=="additive" || basis=="glp") {
-            model.z.unique <- lm(y~P,weights=L)
+            if(is.null(tau))
+              model.z.unique <- lm(y~P,weights=L)
+            else
+              suppressWarnings(model.z.unique <- rq(y~P,weights=L,tau=tau,method="fn"))
           } else {
-            model.z.unique <- lm(y~P-1,weights=L)
+            if(is.null(tau))
+              model.z.unique <- lm(y~P-1,weights=L)
+            else
+              suppressWarnings(model.z.unique <- rq(y~P-1,weights=L,tau=tau,method="fn"))
           }
           if(model.return) model[[i]] <- model.z.unique
           P <- prod.spline(x=x,K=K,xeval=xeval[zz,,drop=FALSE],knots=knots,basis=basis)
           tmp <- predict(model.z.unique,newdata=data.frame(as.matrix(P)),interval="confidence",se.fit=TRUE)
-          fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+
+          if(is.null(tau))
+            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+          else
+            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/1.96)
+
           rm(tmp)
         }
 
@@ -307,7 +360,7 @@ predict.kernel.spline <- function(x,
       if(is.null(xeval)) {
         fit.spline <- matrix(NA,nrow=n,ncol=4)
         htt <- numeric(length=n)
-        P.hat <- numeric(length=n)        
+        P.hat <- numeric(length=n)
         x.intercept <- rep(1,n)
         for(i in 1:nrow.z.unique) {
           zz <- ind == ind.vals[i]
@@ -317,12 +370,24 @@ predict.kernel.spline <- function(x,
           ## model has no continuous predictors hence the intercept is
           ## the parameter that may shift with the categorical
           ## predictors
-          model.z.unique <- lm(y~x.intercept-1,weights=L)
+          if(is.null(tau))
+            model.z.unique <- lm(y~x.intercept-1,weights=L)
+          else
+            suppressWarnings(model.z.unique <- rq(y~x.intercept-1,weights=L,tau=tau,method="fn"))
+            model.z.unique.hat <- lm(y~x.intercept-1,weights=L)
           if(model.return) model[[i]] <- model.z.unique
-          htt[zz] <- hatvalues(model.z.unique)[zz]
+          if(is.null(tau))
+            htt[zz] <- hatvalues(model.z.unique)[zz]
+          else
+            htt[zz] <- hatvalues(model.z.unique.hat)[zz]
           P.hat[zz] <- sum(L)
           tmp <- predict(model.z.unique,newdata=data.frame(x.intercept=x.intercept[zz]),interval="confidence",se.fit=TRUE)
-          fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+
+          if(is.null(tau))
+            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+          else
+            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/1.96)
+
           rm(tmp)
         }
       } else {
@@ -345,18 +410,28 @@ predict.kernel.spline <- function(x,
           zz <- ind.zeval == ind.zeval.vals[i]
           L <- prod.kernel(Z=z,z=zeval.unique[ind.zeval.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
           k <- 0
-          model.z.unique <- lm(y~x.intercept-1,weights=L)
+          if(is.null(tau))
+            model.z.unique <- lm(y~x.intercept-1,weights=L)
+          else
+            suppressWarnings(model.z.unique <- rq(y~x.intercept-1,weights=L,tau=tau,method="fn"))
           if(model.return) model[[i]] <- model.z.unique
           tmp <- predict(model.z.unique,newdata=data.frame(x.intercept=rep(1,num.eval)[zz]),interval="confidence",se.fit=TRUE)
-          fit.spline[zz,] <- cbind(tmp[[1]],as.matrix(tmp[[2]]))
+
+          if(is.null(tau))
+            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+          else
+            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/1.96)
+
           rm(tmp)
         }
       }
 
     }
 
-    rank <- model.z.unique$rank ## same for all models
-
+    if(is.null(tau))
+      rank <- model.z.unique$rank ## same for all models
+    else
+      rank <- NCOL(model.z.unique$x) ## same for all models
   }
 
   console <- printClear(console)
@@ -375,10 +450,11 @@ predict.kernel.spline <- function(x,
 
   return(list(fitted.values=fit.spline,
               df.residual=length(y)-rank,
-              rank=rank, 
+              rank=rank,
               model=model,
               hatvalues=htt,
-              P.hat=P.hat))
+              P.hat=P.hat,
+              tau=tau))
 
 }
 
@@ -396,12 +472,13 @@ deriv.kernel.spline <- function(x,
                                 knots=c("quantiles","uniform"),
                                 basis=c("additive","tensor","glp"),
                                 deriv.index=1,
-                                deriv=0) {
+                                deriv=0,
+                                tau=NULL) {
 
   if(deriv == 0) stop(" deriv must be greater than zero")
 
   if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
-  if(!is.matrix(K)) stop(" K must be a two-column matrix")  
+  if(!is.matrix(K)) stop(" K must be a two-column matrix")
 
   basis <- match.arg(basis)
   knots <- match.arg(knots)
@@ -411,10 +488,13 @@ deriv.kernel.spline <- function(x,
 
   ## Univariate additive spline bases have one less column than
   ## univariate tensor spline bases. This is used only for setting
-  ## appropriate columns for derivative computation.
-  
+  ## appropriate columns for derivative computation. We also need to
+  ## set the segments to 0 when the degree is zero, again only for
+  ## derivative computation when using an additive basis.
+
   if(basis=="additive" || basis=="glp") {
     K.additive <- K
+    K.additive[,2] <- ifelse(K[,1]==0,0,K[,2])    
     K.additive[,1] <- ifelse(K[,1]>0,K[,1]-1,K[,1])
   }
 
@@ -422,32 +502,59 @@ deriv.kernel.spline <- function(x,
 
   if(is.null(z)) {
 
-    ## First no categorical predictor case
+    ## First no categorical predictor case (never reached by crs)
 
     if(K[deriv.index,1]!=0) {
 
-      P <- prod.spline(x=x,K=K,knots=knots,basis=basis)      
+      P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
       P.deriv <- prod.spline(x=x,K=K,xeval=xeval,knots=knots,basis=basis,deriv.index=deriv.index,deriv=deriv)
       dim.P.no.tensor <- attr(P.deriv,"dim.P.no.tensor")
       dim.P.tensor <- NCOL(P)
 
       if(basis=="additive") {
-        model <- lm(y~P)
+        if(is.null(tau))
+          model <- lm(y~P)
+        else
+          suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
+
         dim.P.deriv <- sum(K.additive[deriv.index,])
-        deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)      
+        deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)
         deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
-        deriv.ind.vec <- deriv.start:deriv.end
+        deriv.ind.vec <- max(1,deriv.start:deriv.end - length(which(K[,1]==0)))
         deriv.spline <- P.deriv[,deriv.ind.vec,drop=FALSE]%*%(coef(model)[-1])[deriv.ind.vec]
-        vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+
+        if(is.null(tau))
+          vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+        else
+          suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
         se.deriv <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })
       } else if(basis=="tensor") {
-        model <- lm(y~P-1)
+        if(is.null(tau))
+          model <- lm(y~P-1)
+        else
+          suppressWarnings(model <- rq(y~P-1,tau=tau,method="fn"))
+
         deriv.spline <- P.deriv%*%coef(model)
-        se.deriv <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov(model)%*%t(P.deriv[i,,drop=FALSE])) })
+
+        if(is.null(tau))
+          vcov.model <- vcov(model)
+        else
+          suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov)
+
+        se.deriv <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
       } else if(basis=="glp") {
-        model <- lm(y~P)
+        if(is.null(tau))
+          model <- lm(y~P)
+        else
+          suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
         deriv.spline <- P.deriv%*%coef(model)[-1]
-        vcov.model <- vcov(model)[-1,-1,drop=FALSE]        
+
+        if(is.null(tau))
+          vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+        else
+          suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
         se.deriv <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
       }
 
@@ -478,33 +585,59 @@ deriv.kernel.spline <- function(x,
 
       if(is.null(xeval)) {
         deriv.spline <- numeric(length=n)
-        se.deriv <- numeric(length=n)        
+        se.deriv <- numeric(length=n)
         for(i in 1:nrow.z.unique) {
           zz <- ind == ind.vals[i]
           L <- prod.kernel(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
-          P <- prod.spline(x=x,K=K,knots=knots,basis=basis)          
+          P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
           P.deriv <- prod.spline(x=x,K=K,xeval=x[zz,,drop=FALSE],knots=knots,basis=basis,deriv.index=deriv.index,deriv=deriv)
           k <- NCOL(P)
           dim.P.no.tensor <- attr(P.deriv,"dim.P.no.tensor")
           dim.P.tensor <- NCOL(P)
 
           if(basis=="additive") {
-            model <- lm(y~P)
+            if(is.null(tau))
+              model <- lm(y~P)
+            else
+              suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
             dim.P.deriv <- sum(K.additive[deriv.index,])
-            deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)      
+            deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)
             deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
             deriv.ind.vec <- deriv.start:deriv.end
             deriv.spline[zz] <- P.deriv[,deriv.ind.vec,drop=FALSE]%*%(coef(model)[-1])[deriv.ind.vec]
-            vcov.model <- vcov(model)[-1,-1,drop=FALSE]
-            se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })            
+            if(is.null(tau))
+              vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+            else
+              suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
+            se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })
           } else if(basis=="tensor") {
-            model <- lm(y~P-1)
+            if(is.null(tau))
+              model <- lm(y~P-1)
+            else
+              suppressWarnings(model <- rq(y~P-1,tau=tau,method="fn"))
+
             deriv.spline[zz] <- P.deriv%*%coef(model)
-            se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov(model)%*%t(P.deriv[i,,drop=FALSE])) })
+
+            if(is.null(tau))
+              vcov.model <- vcov(model)
+            else
+              suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov)
+
+            se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
           } else if(basis=="glp") {
-            model <- lm(y~P)
+            if(is.null(tau))
+              model <- lm(y~P)
+            else
+              suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
+
             deriv.spline[zz] <- P.deriv%*%coef(model)[-1]
-            vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+
+            if(is.null(tau))
+              vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+            else
+              suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
             se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
           }
 
@@ -522,7 +655,7 @@ deriv.kernel.spline <- function(x,
         num.eval <- nrow(zeval)
 
         deriv.spline <- numeric(length(num.eval))
-        se.deriv <- numeric(length=num.eval)        
+        se.deriv <- numeric(length=num.eval)
         for(i in 1:nrow.zeval.unique) {
           zz <- ind.zeval == ind.zeval.vals[i]
           L <- prod.kernel(Z=z,z=zeval.unique[ind.zeval.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
@@ -533,22 +666,47 @@ deriv.kernel.spline <- function(x,
           dim.P.tensor <- NCOL(P)
 
           if(basis=="additive") {
-            model <- lm(y~P,weights=L)
+            if(is.null(tau))
+              model <- lm(y~P,weights=L)
+            else
+              suppressWarnings(model <- rq(y~P,weights=L,tau=tau,method="fn"))
+
             dim.P.deriv <- sum(K.additive[deriv.index,])
-            deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)      
+            deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)
             deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
             deriv.ind.vec <- deriv.start:deriv.end
             deriv.spline[zz] <- P.deriv[,deriv.ind.vec,drop=FALSE]%*%(coef(model)[-1])[deriv.ind.vec]
-            vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+            if(is.null(tau))
+              vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+            else
+              suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
             se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })
           } else if(basis=="tensor") {
-            model <- lm(y~P-1,weights=L)
+            if(is.null(tau))
+              model <- lm(y~P-1,weights=L)
+            else
+              suppressWarnings(model <- rq(y~P-1,weights=L,tau=tau,method="fn"))
             deriv.spline[zz] <- P.deriv%*%coef(model)
-            se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov(model)%*%t(P.deriv[i,,drop=FALSE])) })
+
+            if(is.null(tau))
+              vcov.model <- vcov(model)
+            else
+              suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov)
+
+            se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
           } else if(basis=="glp") {
-            model <- lm(y~P,weights=L)
+            if(is.null(tau))
+              model <- lm(y~P,weights=L)
+            else
+              suppressWarnings(model <- rq(y~P,weights=L,tau=tau,method="fn"))
             deriv.spline[zz] <- P.deriv%*%coef(model)[-1]
-            vcov.model <- vcov(model)[-1,-1,drop=FALSE]            
+
+            if(is.null(tau))
+              vcov.model <- vcov(model)[-1,-1,drop=FALSE]
+            else
+              suppressWarnings(vcov.model <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
             se.deriv[zz] <- sapply(1:NROW(P.deriv), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
           }
 
@@ -571,7 +729,7 @@ deriv.kernel.spline <- function(x,
   }
 
   lwr <- deriv.spline - qnorm(0.975)*se.deriv
-  upr <- deriv.spline + qnorm(0.975)*se.deriv    
+  upr <- deriv.spline + qnorm(0.975)*se.deriv
 
   return(cbind(as.numeric(deriv.spline),lwr, upr))
 
@@ -595,10 +753,14 @@ predict.factor.spline <- function(x,
                                   basis=c("additive","tensor","glp"),
                                   prune=FALSE,
                                   prune.index=NULL,
-                                  trace=0){
+                                  trace=0,
+                                  tau=NULL){
 
   if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
-  if(!is.matrix(K)) stop(" K must be a two-column matrix")  
+  if(!is.matrix(K)) stop(" K must be a two-column matrix")
+
+  if(!is.null(tau)) if(tau <= 0) stop(" tau must be > 0")
+  if(!is.null(tau)) if(tau >= 1) stop(" tau must be < 1")
 
   basis <- match.arg(basis)
   knots <- match.arg(knots)
@@ -629,63 +791,121 @@ predict.factor.spline <- function(x,
       P.df <- data.frame(P)
       names(P.df) <- paste("P",seq(1,NCOL(P.df)),sep="")
       if(basis=="additive" || basis=="glp") {
-        model <- lm(y~.,data=P.df)
+        if(is.null(tau))
+          model <- lm(y~.,data=P.df)
+        else
+          suppressWarnings(model <- rq(y~.,data=P.df,tau=tau,method="fn"))
       } else {
-        model <- lm(y~.-1,data=P.df)
+        if(is.null(tau))
+          model <- lm(y~.-1,data=P.df)
+        else
+          suppressWarnings(model <- rq(y~.-1,data=P.df,tau=tau,method="fn"))
       }
-      cv <- mean(residuals(model)^2/(1-hatvalues(model))^2)
+      if(is.null(tau))
+        cv <- mean(residuals(model)^2/(1-hatvalues(model))^2)
+      else
+        suppressWarnings(cv <- cv.rq(model,tau=tau))
       console <- printClear(console)
       console <- printPush("Pruning...",console = console)
       if(basis=="additive" || basis=="glp") {
-        model.pruned <- stepCV(lm(y~.,data=P.df),
-                               scope=list(upper=~.,lower=~1),
-                               k=log(length(y)),
-                               trace=trace)
+        if(is.null(tau))
+          model.pruned <- stepCV(lm(y~.,data=P.df),
+                                 scope=list(upper=~.,lower=~1),
+                                 k=log(length(y)),
+                                 trace=trace)
+        else
+          suppressWarnings(model.pruned <- stepCV(rq(y~.,data=P.df,tau=tau,method="fn"),
+                                                  scope=list(upper=~.,lower=~1),
+                                                  k=log(length(y)),
+                                                  trace=trace))
+
+
       } else {
-        model.pruned <- stepCV(lm(y~.-1,data=P.df),
-                               scope=list(upper=~.,lower=~1),
-                               k=log(length(y)),
-                               trace=trace)
+        if(is.null(tau))
+          model.pruned <- stepCV(lm(y~.-1,data=P.df),
+                                 scope=list(upper=~.,lower=~1),
+                                 k=log(length(y)),
+                                 trace=trace)
+        else
+          suppressWarnings(model.pruned <- stepCV(rq(y~.-1,data=P.df,tau=tau,method="fn"),
+                                                  scope=list(upper=~.,lower=~1),
+                                                  k=log(length(y)),
+                                                  trace=trace))
+
       }
-      cv.pruned <- mean(residuals(model.pruned)^2/(1-hatvalues(model.pruned))^2)
+      if(is.null(tau))
+        cv.pruned <- mean(residuals(model.pruned)^2/(1-hatvalues(model.pruned))^2)
+      else
+        suppressWarnings(cv.pruned <- cv.rq(model.pruned,tau=tau))
+
       if(cv.pruned <= cv) {
         IND <- logical()
         for(i in 1:NCOL(P.df)) IND[i] <- any(names(P.df)[i]==names(model.pruned$model[,-1,drop=FALSE]))
         if(basis=="additive" || basis=="glp") {
-          model <- lm(y~P[,IND,drop=FALSE])
+          if(is.null(tau))
+            model <- lm(y~P[,IND,drop=FALSE])
+          else
+            suppressWarnings(model <- rq(y~P[,IND,drop=FALSE],tau=tau,method="fn"))
         } else {
-          model <- lm(y~P[,IND,drop=FALSE]-1)
+          if(is.null(tau))
+            model <- lm(y~P[,IND,drop=FALSE]-1)
+          else
+            suppressWarnings(model <- rq(y~P[,IND,drop=FALSE]-1,tau=tau,method="fn"))
         }
       } else {
         warning(" pruned model did not lower cross-validation score, using non-pruned bases")
         IND <- !logical(length=NCOL(P))
         if(basis=="additive" || basis=="glp") {
-          model <- lm(y~P)
+          if(is.null(tau))
+            model <- lm(y~P)
+          else
+            suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
         } else {
-          model <- lm(y~P-1)
+          if(is.null(tau))
+            model <- lm(y~P-1)
+          else
+            suppressWarnings(model <- rq(y~P-1,tau=tau,method="fn"))
         }
       }
     } else if(prune) {
       ## Pruning, index passed in...
       IND <- prune.index
       if(basis=="additive" || basis=="glp") {
-        model <- lm(y~P[,IND,drop=FALSE])
+        if(is.null(tau))
+          model <- lm(y~P[,IND,drop=FALSE])
+        else
+          suppressWarnings(model <- rq(y~P[,IND,drop=FALSE],tau=tau,method="fn"))
       } else {
-        model <- lm(y~P[,IND,drop=FALSE]-1)
+        if(is.null(tau))
+          model <- lm(y~P[,IND,drop=FALSE]-1)
+        else
+          suppressWarnings(model <- rq(y~P[,IND,drop=FALSE]-1,tau=tau,method="fn"))
       }
       cv <- NULL
-      cv.pruned <- mean(residuals(model)^2/(1-hatvalues(model))^2)
+      if(is.null(tau))
+        cv.pruned <- mean(residuals(model)^2/(1-hatvalues(model))^2)
+      else
+        suppressWarnings(cv.pruned <- cv.rq(model,tau=tau))
     } else {
       ## No pruning
       IND <- !logical(length=NCOL(P))
       if(basis=="additive" || basis=="glp") {
-        model <- lm(y~P)
+        if(is.null(tau))
+          model <- lm(y~P)
+        else
+          suppressWarnings(model <- rq(y~P,tau=tau,method="fn"))
       } else {
-        model <- lm(y~P-1)
+        if(is.null(tau))
+          model <- lm(y~P-1)
+        else
+          suppressWarnings(model <- rq(y~P-1,tau=tau,method="fn"))
       }
-      cv <- mean(residuals(model)^2/(1-hatvalues(model))^2)
       cv.pruned <- NULL
-    }      
+      if(is.null(tau))
+        cv <- mean(residuals(model)^2/(1-hatvalues(model))^2)
+      else
+        suppressWarnings(cv <- cv.rq(model,tau=tau))
+    }
 
     if(is.null(xeval)) {
       fit.spline <- predict(model,interval="confidence",se.fit=TRUE)
@@ -699,8 +919,17 @@ predict.factor.spline <- function(x,
     ## Degree == 0, no pruning possible
     IND <- TRUE
 
-    model <- lm(y~1)
-    cv <- mean(residuals(model)^2/(1-hatvalues(model))^2) ## Added
+    if(is.null(tau))
+      model <- lm(y~1)
+    else
+      suppressWarnings(model <- rq(y~1,tau=tau,method="fn"))
+
+
+    if(is.null(tau))
+      cv <- mean(residuals(model)^2/(1-hatvalues(model))^2) ## Added
+    else
+      suppressWarnings(cv <- cv.rq(model,tau=tau))
+
     cv.pruned <- NULL
     if(is.null(xeval)) {
       fit.spline <- predict(model,interval="confidence",se.fit=TRUE)
@@ -710,20 +939,29 @@ predict.factor.spline <- function(x,
 
   }
 
-  fit.spline <- cbind(fit.spline[[1]],se=fit.spline[[2]])
+  if(is.null(tau))
+    fit.spline <- cbind(fit.spline[[1]],se=fit.spline[[2]])
+  else
+    fit.spline <- cbind(fit.spline,se=ifelse(NCOL(fit.spline)>1,(fit.spline[,3]-fit.spline[,1])/1.96,NA))
 
   console <- printClear(console)
   console <- printPop(console)
+
+  if(is.null(tau))
+    htt <- hatvalues(model)
+  else
+    htt <- hat(model$x)
 
   return(list(fitted.values=fit.spline,
               df.residual=model$df.residual,
               rank=model$rank,
               model=model,
-              hatvalues=hatvalues(model),
+              hatvalues=htt,
               cv=cv,
               cv.pruned=cv.pruned,
               prune=prune,
-              prune.index=IND))
+              prune.index=IND,
+              tau=tau))
 
 }
 
@@ -745,11 +983,12 @@ deriv.factor.spline <- function(x,
                                 basis=c("additive","tensor","glp"),
                                 deriv.index=1,
                                 deriv=0,
-                                prune.index=NULL) {
+                                prune.index=NULL,
+                                tau=NULL) {
 
   if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
   if(deriv == 0) stop(" derivative must be a positive integer")
-  if(!is.matrix(K)) stop(" K must be a two-column matrix")  
+  if(!is.matrix(K)) stop(" K must be a two-column matrix")
 
   basis <- match.arg(basis)
   knots <- match.arg(knots)
@@ -758,20 +997,22 @@ deriv.factor.spline <- function(x,
 
   ## Univariate additive spline bases have one less column than
   ## univariate tensor spline bases. This is used only for setting
-  ## appropriate columns for derivative computation.
-  
+  ## appropriate columns for derivative computation. We also need to
+  ## set the segments to 0 when the degree is zero, again only for
+  ## derivative computation when using an additive basis.
+
   if(basis=="additive" || basis=="glp") {
     K.additive <- K
+    K.additive[,2] <- ifelse(K[,1]==0,0,K[,2])    
     K.additive[,1] <- ifelse(K[,1]>0,K[,1]-1,K[,1])
   }
-
   if(K[deriv.index,1]!=0) {
 
     ## Degree > 0
 
     ## Estimate model on training data.
-    
-    P <- prod.spline(x=x,z=z,K=K,I=I,knots=knots,basis=basis)    
+
+    P <- prod.spline(x=x,z=z,K=K,I=I,knots=knots,basis=basis)
     P.deriv <- prod.spline(x=x,z=z,K=K,I=I,xeval=xeval,zeval=zeval,knots=knots,basis=basis,deriv.index=deriv.index,deriv=deriv)
 
     dim.P.no.tensor <- attr(P.deriv,"dim.P.no.tensor")
@@ -784,34 +1025,58 @@ deriv.factor.spline <- function(x,
 
     coef.vec.model <- numeric(length=NCOL(P))
     vcov.mat.model <- matrix(0,nrow=NCOL(P),ncol=NCOL(P))
-
     if(basis=="additive") {
-      model <- lm(y~P[,prune.index,drop=FALSE])
+      if(is.null(tau))
+        model <- lm(y~P[,prune.index,drop=FALSE])
+      else
+        suppressWarnings(model <- rq(y~P[,prune.index,drop=FALSE],tau=tau,method="fn"))
+
       coef.vec.model[prune.index] <- coef(model)[-1]
-      vcov.mat.model[prune.index,prune.index] <- vcov(model)[-1,-1,drop=FALSE]
+
+      if(is.null(tau))
+        vcov.mat.model[prune.index,prune.index] <- vcov(model)[-1,-1,drop=FALSE]
+      else
+        suppressWarnings(vcov.mat.model[prune.index,prune.index] <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
       dim.P.deriv <- sum(K.additive[deriv.index,])
-      deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)      
+      deriv.start <- ifelse(deriv.index!=1,sum(K.additive[1:(deriv.index-1),])+1,1)
       deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
       deriv.ind.vec[deriv.start:deriv.end] <- TRUE
       deriv.ind.vec <- ifelse(prune.index,deriv.ind.vec,FALSE)
     } else if(basis=="tensor") {
-      model <- lm(y~P[,prune.index,drop=FALSE]-1)
+      if(is.null(tau))
+        model <- lm(y~P[,prune.index,drop=FALSE]-1)
+      else
+        suppressWarnings(model <- rq(y~P[,prune.index,drop=FALSE]-1,tau=tau,method="fn"))
       coef.vec.model[prune.index] <- coef(model)
-      vcov.mat.model[prune.index,prune.index] <- vcov(model)
-      deriv.ind.vec[1:dim.P.tensor] <- TRUE            
+
+      if(is.null(tau))
+        vcov.mat.model[prune.index,prune.index] <- vcov(model)
+      else
+        suppressWarnings(vcov.mat.model[prune.index,prune.index] <- summary(model,covariance=TRUE)$cov)
+
+      deriv.ind.vec[1:dim.P.tensor] <- TRUE
       deriv.ind.vec <- ifelse(prune.index,deriv.ind.vec,FALSE)
     } else if(basis=="glp") {
-      model <- lm(y~P[,prune.index,drop=FALSE])
+      if(is.null(tau))
+        model <- lm(y~P[,prune.index,drop=FALSE])
+      else
+        suppressWarnings(model <- rq(y~P[,prune.index,drop=FALSE],tau=tau,method="fn"))
       coef.vec.model[prune.index] <- coef(model)[-1]
-      vcov.mat.model[prune.index,prune.index] <- vcov(model)[-1,-1,drop=FALSE]
-      deriv.ind.vec[1:dim.P.tensor] <- TRUE            
+
+      if(is.null(tau))
+        vcov.mat.model[prune.index,prune.index] <- vcov(model)[-1,-1,drop=FALSE]
+      else
+        suppressWarnings(vcov.mat.model[prune.index,prune.index] <- summary(model,covariance=TRUE)$cov[-1,-1,drop=FALSE])
+
+      deriv.ind.vec[1:dim.P.tensor] <- TRUE
       deriv.ind.vec <- ifelse(prune.index,deriv.ind.vec,FALSE)
     }
 
     deriv.spline <- P.deriv[,deriv.ind.vec,drop=FALSE]%*%coef.vec.model[deriv.ind.vec]
     se.deriv <- sapply(1:NROW(P.deriv[,deriv.ind.vec,drop=FALSE]), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.mat.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })
     lwr <- deriv.spline - qnorm(0.975)*se.deriv
-    upr <- deriv.spline + qnorm(0.975)*se.deriv    
+    upr <- deriv.spline + qnorm(0.975)*se.deriv
 
   } else {
 
@@ -827,8 +1092,8 @@ deriv.factor.spline <- function(x,
 
 }
 
-## The following function is a wrapper of cv.kernel.spline to 
-## handle the situation when knots="auto". It will call 
+## The following function is a wrapper of cv.kernel.spline to
+## handle the situation when knots="auto". It will call
 ## cv.kernel.spline two times and return the minimum with
 ## the optimal knots.
 cv.kernel.spline.wrapper <- function(x,
@@ -843,7 +1108,8 @@ cv.kernel.spline.wrapper <- function(x,
                                      is.ordered.z=NULL,
                                      knots=c("quantiles","uniform","auto"),
                                      basis=c("additive","tensor","glp"),
-                                     cv.func=c("cv.ls","cv.gcv","cv.aic")) {
+                                     cv.func=c("cv.ls","cv.gcv","cv.aic"),
+                                     tau=NULL) {
 
   knots.opt <- knots;
 
@@ -851,33 +1117,35 @@ cv.kernel.spline.wrapper <- function(x,
 
     knots.opt <- "quantiles"
 
-    cv <- cv.kernel.spline(x=x, 
-                           y=y, 
-                           z=z, 
-                           K=K, 
-                           lambda=lambda, 
-                           z.unique=z.unique, 
-                           ind=ind, 
-                           ind.vals=ind.vals, 
-                           nrow.z.unique=nrow.z.unique, 
-                           is.ordered.z=is.ordered.z, 
-                           knots="quantiles", 
-                           basis=basis, 
-                           cv.func=cv.func)
-    
-    cv.uniform <- cv.kernel.spline(x=x, 
-                                   y=y, 
-                                   z=z, 
-                                   K=K, 
-                                   lambda=lambda, 
-                                   z.unique=z.unique, 
-                                   ind=ind, 
-                                   ind.vals=ind.vals, 
-                                   nrow.z.unique=nrow.z.unique, 
-                                   is.ordered.z=is.ordered.z, 
-                                   knots="uniform", 
-                                   basis=basis, 
-                                   cv.func=cv.func)
+    cv <- cv.kernel.spline(x=x,
+                           y=y,
+                           z=z,
+                           K=K,
+                           lambda=lambda,
+                           z.unique=z.unique,
+                           ind=ind,
+                           ind.vals=ind.vals,
+                           nrow.z.unique=nrow.z.unique,
+                           is.ordered.z=is.ordered.z,
+                           knots="quantiles",
+                           basis=basis,
+                           cv.func=cv.func,
+                           tau=tau)
+
+    cv.uniform <- cv.kernel.spline(x=x,
+                                   y=y,
+                                   z=z,
+                                   K=K,
+                                   lambda=lambda,
+                                   z.unique=z.unique,
+                                   ind=ind,
+                                   ind.vals=ind.vals,
+                                   nrow.z.unique=nrow.z.unique,
+                                   is.ordered.z=is.ordered.z,
+                                   knots="uniform",
+                                   basis=basis,
+                                   cv.func=cv.func,
+                                   tau=tau)
     if(cv > cv.uniform) {
       cv <- cv.uniform
       knots.opt <- "uniform"
@@ -885,26 +1153,27 @@ cv.kernel.spline.wrapper <- function(x,
 
   } else {
 
-    cv <- cv.kernel.spline(x=x, 
-                           y=y, 
-                           z=z, 
-                           K=K, 
-                           lambda=lambda, 
-                           z.unique=z.unique, 
-                           ind=ind, 
-                           ind.vals=ind.vals, 
-                           nrow.z.unique=nrow.z.unique, 
-                           is.ordered.z=is.ordered.z, 
-                           knots=knots, 
-                           basis=basis, 
-                           cv.func=cv.func)
+    cv <- cv.kernel.spline(x=x,
+                           y=y,
+                           z=z,
+                           K=K,
+                           lambda=lambda,
+                           z.unique=z.unique,
+                           ind=ind,
+                           ind.vals=ind.vals,
+                           nrow.z.unique=nrow.z.unique,
+                           is.ordered.z=is.ordered.z,
+                           knots=knots,
+                           basis=basis,
+                           cv.func=cv.func,
+                           tau=tau)
 
   }
 
   attr(cv, "knots.opt") <- knots.opt
-  
+
   return(cv)
-  
+
 }
 ## We use the Sherman-Morrison-Woodbury decomposition to efficiently
 ## calculate the leave-one-out cross-validation function for
@@ -929,117 +1198,183 @@ cv.kernel.spline <- function(x,
 														 is.ordered.z=NULL,
 														 knots=c("quantiles","uniform"),
 														 basis=c("additive","tensor","glp"),
-														 cv.func=c("cv.ls","cv.gcv","cv.aic")) {
+														 cv.func=c("cv.ls","cv.gcv","cv.aic"),
+                             tau=NULL) {
 
-		if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
+  if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
 
-		if(!is.matrix(K)) stop(" K must be a two-column matrix")  
+  if(!is.matrix(K)) stop(" K must be a two-column matrix")
 
-		basis <- match.arg(basis)
-		if(is.null(is.ordered.z)) stop(" is.ordered.z must be provided")
-		knots <- match.arg(knots)
-		cv.func <- match.arg(cv.func)
+  basis <- match.arg(basis)
+  if(is.null(is.ordered.z)) stop(" is.ordered.z must be provided")
+  knots <- match.arg(knots)
+  cv.func <- match.arg(cv.func)
 
-		## Additive spline regression models have an intercept in the lm()
-		## model (though not in the gsl.bs function)
+  ## Without computing P, compute the number of columns that P would
+  ## be and if degrees of freedom is 1 or less, return a large penalty.
 
-		lm.intercept <- ifelse(basis=="additive" || basis=="glp", TRUE, FALSE)
+  n <- length(y)
 
-		## Without computing P, compute the number of columns that P would
-		## be and if degrees of freedom is 1 or less, return a large penalty.
+  ## Otherwise, compute the cross-validation function
 
-		n <- length(y)
+  if(is.null(z)) {
+    ## No categorical predictors
+    if(any(K[,1] > 0)) {
+      ## Check for rank-deficient fit
+      P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
+      ## Test for lack of degrees of freedom
+      if(NCOL(P) >= (n-1))
+        return(sqrt(.Machine$double.xmax))
+      if(basis=="additive" || basis=="glp") {
+        ## Additive spline regression models have an intercept in the lm()
+        ## model (though not in the gsl.bs function)
+        if(is.null(tau)) {
+          epsilon <- residuals(model <- lm.fit(cbind(1,P),y))
+          if(model$rank < (NCOL(P)+1))
+            return(sqrt(.Machine$double.xmax))
+        } else {
+          ## Test for full column rank
+          if(!is.fullrank(cbind(1,P)))
+            return(sqrt(.Machine$double.xmax))         
+          residuals <- tryCatch(residuals(rq.fit(cbind(1,P),y,tau=tau,method="fn")),error=function(e){FALSE})
+          if(is.logical(residuals))
+            return(sqrt(.Machine$double.xmax))            
+        }
+      } else {
+        if(is.null(tau)) {
+          epsilon <- residuals(model <- lm.fit(P,y))
+          if(model$rank < NCOL(P))
+            return(sqrt(.Machine$double.xmax))
+        } else {
+          ## Test for full column rank
+          if(!is.fullrank(P))
+            return(sqrt(.Machine$double.xmax))         
+          residuals <- tryCatch(residuals(rq.fit(P,y,tau=tau,method="fn")),error=function(e){FALSE})
+          if(is.logical(residuals))
+            return(sqrt(.Machine$double.xmax))            
+        }
+      }
+      htt <- hat(P)
+      htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+    } else {
+      htt <- rep(1/n,n)
+      epsilon <- y-mean(y)
+    }
 
-		## Otherwise, compute the cross-validation function
+  } else {
 
-		if(is.null(z)) {
-				## No categorical predictors
-				if(any(K[,1] > 0)) {
-						P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
-						if(NCOL(P) >= (n-1)) return(sqrt(.Machine$double.xmax))
-						suppressWarnings(epsilon <- residuals(lsfit(P,y,intercept=lm.intercept)))
-						htt <- hat(P)
-						htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
-				} else {
-						htt <- rep(1/n,n)
-						epsilon <- y-mean(y)
-				}
-				if(cv.func == "cv.ls") {
-						cv <- mean(epsilon^2/(1-htt)^2)
-				} else if(cv.func == "cv.gcv"){
-						cv <- mean(epsilon^2/(1-mean(htt))^2)
-				} else if(cv.func == "cv.aic"){
-						sigmasq <- mean(epsilon^2)
-						traceH <- sum(htt)
-						penalty <- (1+traceH/n)/(1-(traceH+2)/n)
-						cv <- ifelse(penalty < 0, .Machine$double.xmax, log(sigmasq)+penalty);
-				}
-		} else {
-				## Categorical predictors - this is the workhorse
-				z <- as.matrix(z)
-				num.z <- NCOL(z)
-				epsilon <- numeric(length=n)
-				htt <- numeric(length=n)
-				## At least one predictor for which degree > 0
-				if(any(K[,1] > 0)) {
-						P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
-						## Check for 1 or fewer degrees of freedom
-						if(NCOL(P) >= (n-1)) return(sqrt(.Machine$double.xmax))
-						for(i in 1:nrow.z.unique) {
-								zz <- ind == ind.vals[i]
-								L <- prod.kernel(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
-								if(basis=="additive" || basis=="glp") {
-										## Additive spline regression models have an intercept in the lm()
-										## model (though not in the gsl.bs function)
-										model <- lm.wfit(cbind(1,P),y,L)
-										## Check for rank-deficient fit
-										if(model$rank != (NCOL(P)+1)) return(sqrt(.Machine$double.xmax))
-								} else {
-										model <- lm.wfit(P,y,L)
-										## Check for rank-deficient fit          
-										if(model$rank != NCOL(P)) return(sqrt(.Machine$double.xmax))
-								}
-								epsilon[zz] <- residuals(model)[zz]
-								htt[zz] <- hat(model$qr)[zz]
-						}
-				} else {
-						## No predictors for which degree > 0      
-						z.factor <- data.frame(factor(z[,1]))
-						if(num.z > 1) for(i in 2:num.z) z.factor <- data.frame(z.factor,factor(z[,i]))
-						for(i in 1:nrow.z.unique) {
-								zz <- ind == ind.vals[i]
-								L <- prod.kernel(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
-								## Whether we use additive, glp, or tensor products, this
-								## model has no continuous predictors hence the intercept is
-								## the parameter that may shift with the categorical
-								## predictors
-								model <- lm.wfit(matrix(1,n,1),y,L)
-								epsilon[zz] <- residuals(model)[zz]
-								htt[zz] <- hat(model$qr)[zz]
-						}
-				}
+    ## Categorical predictors - this is the workhorse
+    z <- as.matrix(z)
+    num.z <- NCOL(z)
+    epsilon <- numeric(length=n)
+    htt <- numeric(length=n)
+    ## At least one predictor for which degree > 0
+    if(any(K[,1] > 0)) {
+      P <- prod.spline(x=x,K=K,knots=knots,basis=basis)
+      ## Test for lack of degrees of freedom
+      if(NCOL(P) >= (n-1))
+        return(sqrt(.Machine$double.xmax))
+       for(i in 1:nrow.z.unique) {
+        zz <- ind == ind.vals[i]
+        L <- prod.kernel(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
+        if(basis=="additive" || basis=="glp") {
+          ## Additive spline regression models have an intercept in
+          ## the lm() model (though not in the gsl.bs function)
+          if(is.null(tau)) {
+            model <- lm.wfit(cbind(1,P),y,L)
+            if(model$rank < (NCOL(P)+1))
+              return(sqrt(.Machine$double.xmax))
+          } else {
+            ## Test for full column rank
+            if(!is.fullrank(cbind(1,P)*L))
+              return(sqrt(.Machine$double.xmax))         
+            model <- tryCatch(rq.wfit(cbind(1,P),y,weights=L,tau=tau,method="fn"),error=function(e){FALSE})
+            if(is.logical(model))
+              return(sqrt(.Machine$double.xmax))            
+            model.hat <- lm.wfit(cbind(1,P),y,L)
+          }
+        } else {
+          if(is.null(tau)) {
+            model <- lm.wfit(P,y,L)
+            if(model$rank < NCOL(P))
+              return(sqrt(.Machine$double.xmax))
+          } else {
+            ## Test for full column rank
+            if(!is.fullrank(P*L))
+              return(sqrt(.Machine$double.xmax))         
+            model <- tryCatch(rq.wfit(P,y,weights=L,tau=tau,method="fn"),error=function(e){FALSE})
+            if(is.logical(model))
+              return(sqrt(.Machine$double.xmax))            
+            model.hat <- lm.wfit(P,y,L)
+          }
+        }
+        epsilon[zz] <- residuals(model)[zz]
+        if(is.null(tau))
+          htt[zz] <- hat(model$qr)[zz]
+        else
+          htt[zz] <- hat(model.hat$qr)[zz]
+      }
+      
+    } else {
+      ## No predictors for which degree > 0
+      z.factor <- data.frame(factor(z[,1]))
+      if(num.z > 1) for(i in 2:num.z) z.factor <- data.frame(z.factor,factor(z[,i]))
+      for(i in 1:nrow.z.unique) {
+        zz <- ind == ind.vals[i]
+        L <- prod.kernel(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
+        ## Test for full column rank
+        if(!is.fullrank(matrix(1,n,1)*L))
+          return(sqrt(.Machine$double.xmax))                        
+        ## Whether we use additive, glp, or tensor products, this
+        ## model has no continuous predictors hence the intercept is
+        ## the parameter that may shift with the categorical
+        ## predictors
+        if(is.null(tau)) {
+          model <- lm.wfit(matrix(1,n,1),y,L)
+          htt[zz] <- hat(model$qr)[zz]
+        } else {
+          model <- tryCatch(rq.wfit(matrix(1,n,1),y,weights=L,tau=tau,method="fn"),error=function(e){FALSE})
+          if(is.logical(model))
+            return(sqrt(.Machine$double.xmax))            
+          model.hat <- lm.wfit(matrix(1,n,1),y,L)
+          htt[zz] <- hat(model.hat$qr)[zz]
+        }
+        epsilon[zz] <- residuals(model)[zz]
+      }
+    }
 
-				htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+    htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
 
-				if(cv.func == "cv.ls") {
-						cv <- mean((epsilon/(1-htt))^2)
-				} else if(cv.func == "cv.gcv"){
-						cv <- mean((epsilon/(1-mean(htt)))^2)
-				} else if(cv.func == "cv.aic"){
-						sigmasq <- mean(epsilon^2)
-						traceH <- sum(htt)
-						penalty <- (1+traceH/n)/(1-(traceH+2)/n)
-						cv <- ifelse(penalty < 0, .Machine$double.xmax, log(sigmasq)+penalty);
-				}
+  }
 
-		}
-
-		return(cv)
+  if(cv.func == "cv.ls") {
+    if(is.null(tau)) 
+      cv <- mean(epsilon^2/(1-htt)^2)
+    else
+      ## Note - this is defined in util.R so if you modify there you must modify here also
+      cv <- mean(check.function(epsilon,tau)/(1-htt)^(1/sqrt(tau*(1-tau))))
+  } else if(cv.func == "cv.gcv"){
+    if(is.null(tau)) 
+      cv <- mean(epsilon^2/(1-mean(htt))^2)
+    else
+      ## Note - this is defined in util.R so if you modify there you must modify here also        
+      cv <- mean(check.function(epsilon,tau)/(1-mean(htt))^(1/sqrt(tau*(1-tau))))        
+  } else if(cv.func == "cv.aic"){
+    if(is.null(tau))
+      sigmasq <- mean(epsilon^2)
+    else
+      sigmasq <- mean(check.function(epsilon,tau))
+    traceH <- sum(htt)
+    penalty <- ((1+traceH/n)/(1-(traceH+2)/n))*(0.5/sqrt(tau*(1-tau)))
+    cv <- ifelse(penalty < 0, .Machine$double.xmax, log(sigmasq)+penalty);
+  }
+  
+  return(ifelse(!is.na(cv),cv,.Machine$double.xmax))
 
 }
 
-## The following function is a wrapper of cv.factor.spline to 
-## handle the situation when knots="auto". It will call 
+## The following function is a wrapper of cv.factor.spline to
+## handle the situation when knots="auto". It will call
 ## cv.factor.spline two times and return the minimum with
 ## the optimal knots.
 
@@ -1050,7 +1385,8 @@ cv.factor.spline.wrapper <- function(x,
 																		 I=NULL,
 																		 knots=c("quantiles","uniform","auto"),
 																		 basis=c("additive","tensor","glp"),
-																		 cv.func=c("cv.ls","cv.gcv","cv.aic")) {
+																		 cv.func=c("cv.ls","cv.gcv","cv.aic"),
+                                     tau=NULL) {
 
   knots.opt <- knots
 
@@ -1058,43 +1394,46 @@ cv.factor.spline.wrapper <- function(x,
 
     knots.opt <- "quantiles"
 
-    cv <- cv.factor.spline(x=x, 
-                           y=y, 
-                           z=z, 
-                           K=K, 
-                           I=I, 
-                           knots="quantiles", 
-                           basis=basis, 
-                           cv.func=cv.func)
+    cv <- cv.factor.spline(x=x,
+                           y=y,
+                           z=z,
+                           K=K,
+                           I=I,
+                           knots="quantiles",
+                           basis=basis,
+                           cv.func=cv.func,
+                           tau=tau)
 
-    cv.uniform <- cv.factor.spline(x=x, 
-                                   y=y, 
-                                   z=z, 
-                                   K=K, 
-                                   I=I, 
-                                   knots="uniform", 
-                                   basis=basis, 
-                                   cv.func=cv.func)
+    cv.uniform <- cv.factor.spline(x=x,
+                                   y=y,
+                                   z=z,
+                                   K=K,
+                                   I=I,
+                                   knots="uniform",
+                                   basis=basis,
+                                   cv.func=cv.func,
+                                   tau=tau)
     if(cv > cv.uniform) {
       cv <- cv.uniform
       knots.opt <- "uniform"
     }
-    
+
   }	else {
 
-    cv <- cv.factor.spline(x=x, 
-                           y=y, 
-                           z=z, 
-                           K=K, 
-                           I=I, 
-                           knots=knots, 
-                           basis=basis, 
-                           cv.func=cv.func)
-    
+    cv <- cv.factor.spline(x=x,
+                           y=y,
+                           z=z,
+                           K=K,
+                           I=I,
+                           knots=knots,
+                           basis=basis,
+                           cv.func=cv.func,
+                           tau=tau)
+
   }
 
   attr(cv, "knots.opt") <- knots.opt
-  
+
   return(cv)
 }
 
@@ -1110,54 +1449,92 @@ cv.factor.spline <- function(x,
 														 I=NULL,
 														 knots=c("quantiles","uniform"),
 														 basis=c("additive","tensor","glp"),
-														 cv.func=c("cv.ls","cv.gcv","cv.aic")) {
+														 cv.func=c("cv.ls","cv.gcv","cv.aic"),
+                             tau=NULL) {
 
-		if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
-		if(!is.matrix(K)) stop(" K must be a two-column matrix")  
+  if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
+  if(!is.matrix(K)) stop(" K must be a two-column matrix")
 
-		basis <- match.arg(basis)
-		knots <- match.arg(knots)
+  basis <- match.arg(basis)
+  knots <- match.arg(knots)
 
-		cv.func <- match.arg(cv.func)
+  cv.func <- match.arg(cv.func)
 
-		n <- NROW(x)
+  n <- NROW(x)
 
-		## Otherwise, compute the cross-validation function
+  ## Otherwise, compute the cross-validation function
 
-		if(any(K[,1] > 0)||any(I > 0)) {
-				P <- prod.spline(x=x,z=z,K=K,I=I,knots=knots,basis=basis)
-				## Check for 1 or fewer degrees of freedom
-				if(NCOL(P) >= (n-1)) return(sqrt(.Machine$double.xmax))
-				if(basis=="additive" || basis=="glp") {
-						## Additive spline regression models have an intercept in the
-						## lm() model (though not in the gsl.bs function)
-						model <- lm.fit(cbind(1,P),y)
-						## Check for rank-deficient fit
-						if(model$rank != (NCOL(P)+1)) return(sqrt(.Machine$double.xmax))
-				} else {
-						model <- lm.fit(P,y)
-						## Check for rank-deficient fit      
-						if(model$rank != NCOL(P)) return(sqrt(.Machine$double.xmax))      
-				}
-				htt <- hat(model$qr)
-				htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
-				epsilon <- residuals(model)
-		} else {
-				htt <- rep(1/n,n)
-				epsilon <- y-mean(y)
-		}
+  if(any(K[,1] > 0)||any(I > 0)) {
+    P <- prod.spline(x=x,z=z,K=K,I=I,knots=knots,basis=basis)
+    ## Check for rank-deficient fit
+    ## First simple test - no degrees of freedom, so no need to
+    ## test condition
+    if(NCOL(P) >= (n-1))
+      return(sqrt(.Machine$double.xmax))
+    if(basis=="additive" || basis=="glp") {
+      ## Additive spline regression models have an intercept in the
+      ## lm() model (though not in the gsl.bs function)
+      if(is.null(tau)) {
+        model <- lm.fit(cbind(1,P),y)
+        ## Test for rank-deficient fit
+        if(model$rank < (NCOL(P)+1)) return(sqrt(.Machine$double.xmax))
+      } else {
+        ## Test for full column rank
+        if(!is.fullrank(cbind(1,P)))
+          return(sqrt(.Machine$double.xmax))      
+        model <- tryCatch(rq.fit(cbind(1,P),y,tau=tau,method="fn"),error=function(e){FALSE})
+        if(is.logical(model))
+          return(sqrt(.Machine$double.xmax))            
+        model.hat <- lm.fit(cbind(1,P),y)
+      }
+    } else {
+      if(is.null(tau)) {
+        model <- lm.fit(P,y)
+        ## Test for rank-deficient fit
+        if(model$rank < NCOL(P)) return(sqrt(.Machine$double.xmax))
+      } else {
+        ## Test for full column rank
+        if(!is.fullrank(P))
+          return(sqrt(.Machine$double.xmax))      
+        model <- tryCatch(rq.fit(P,y,tau=tau,method="fn"),error=function(e){FALSE})
+        if(is.logical(model))
+          return(sqrt(.Machine$double.xmax))            
+        model.hat <- lm.fit(P,y)
+      }
+    }
+    if(is.null(tau))
+      htt <- hat(model$qr)
+    else
+      htt <- hat(model.hat$qr)
+    htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+    epsilon <- residuals(model)
+  } else {
+    htt <- rep(1/n,n)
+    epsilon <- y-mean(y)
+  }
 
-		if(cv.func == "cv.ls") {
-				cv <- mean((epsilon/(1-htt))^2)
-		} else if(cv.func == "cv.gcv"){
-				cv <- mean((epsilon/(1-mean(htt)))^2)
-		} else if(cv.func == "cv.aic"){
-				sigmasq <- mean(epsilon^2)
-				traceH <- sum(htt)
-				penalty <- (1+traceH/n)/(1-(traceH+2)/n)
-				cv <- ifelse(penalty < 0, .Machine$double.xmax, log(sigmasq)+penalty);
-		}
-
-		return(cv)
+  if(cv.func == "cv.ls") {
+    if(is.null(tau)) 
+      cv <- mean(epsilon^2/(1-htt)^2)
+    else
+      ## Note - this is defined in util.R so if you modify there you must modify here also
+      cv <- mean(check.function(epsilon,tau)/(1-htt)^(1/sqrt(tau*(1-tau))))
+  } else if(cv.func == "cv.gcv"){
+    if(is.null(tau)) 
+      cv <- mean(epsilon^2/(1-mean(htt))^2)
+    else
+      ## Note - this is defined in util.R so if you modify there you must modify here also        
+      cv <- mean(check.function(epsilon,tau)/(1-mean(htt))^(1/sqrt(tau*(1-tau))))        
+  } else if(cv.func == "cv.aic"){
+    if(is.null(tau))
+      sigmasq <- mean(epsilon^2)
+    else
+      sigmasq <- mean(check.function(epsilon,tau))
+    traceH <- sum(htt)
+    penalty <- ((1+traceH/n)/(1-(traceH+2)/n))*(0.5/sqrt(tau*(1-tau)))
+    cv <- ifelse(penalty < 0, .Machine$double.xmax, log(sigmasq)+penalty);
+  }
+  
+  return(ifelse(!is.na(cv),cv,.Machine$double.xmax))
 
 }

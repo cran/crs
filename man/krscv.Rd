@@ -26,7 +26,8 @@ krscv(xz,
       basis = c("additive","tensor","glp","auto"),
       cv.func = c("cv.ls","cv.gcv","cv.aic"),
       degree = degree,
-      segments = segments)
+      segments = segments,
+      tau = NULL)
 }
 
 \arguments{
@@ -99,6 +100,12 @@ krscv(xz,
   the B-spline basis for each dimension of the continuous \code{x}
   (i.e. number of knots minus one)}
 
+  \item{tau}{
+    if non-null a number in (0,1) denoting the quantile for which a quantile
+    regression spline is to be estimated rather than estimating the
+    conditional mean (default \code{tau=NULL})
+  }
+  
 }
 
 \details{
@@ -169,14 +176,14 @@ krscv(xz,
     using an improved Akaike information criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
+  Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
+		Theory and Practice,} Princeton University Press.
+
   Ma, S. and J.S. Racine and L. Yang (2011), \dQuote{Spline Regression
   in the Presence of Categorical Predictors,} manuscript.
 
   Ma, S. and J.S. Racine (2011), \dQuote{Additive Regression Splines
   With Irrelevant Categorical and Continuous Regressors,} manuscript.
-
-  Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
-		Theory and Practice,} Princeton University Press.
 
 }
 

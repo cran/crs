@@ -191,3 +191,31 @@ blank <- function(len){
     paste(rep(' ', times = nb), collapse='')
   })
 }
+
+## regression quantile check function
+
+check.function <- function(u,tau=0.5) {
+  if(missing(u)) stop(" Error: u must be provided")
+  if(tau <= 0 | tau >= 1) stop(" Error: tau must lie in (0,1)")
+  return(u*(tau-ifelse(u<0,1,0)))
+}
+
+## Note - this is defined in cv.kernel.spline so if you modify there
+## you must modify here also
+
+cv.rq <- function (model, tau = 0.5) {
+  return(mean(check.function(residuals(model),tau)/(1-hat(model$x))^(1/sqrt(tau*(1-tau)))))
+}
+
+## From the limma package... check the condition number of a matrix
+## (ratio of max/min eigenvalue) using .Machine$double.eps rather than
+## their 1e-13 constant. Note that for weighted regression you simply
+## use x*L which conducts row-wise multiplication (i.e. diag(L)%*%X
+## not necessary)
+
+is.fullrank <- function (x) 
+{
+    x <- as.matrix(x)
+    e <- eigen(crossprod(x), symmetric = TRUE, only.values = TRUE)$values
+    e[1] > 0 && abs(e[length(e)]/e[1]) > .Machine$double.eps
+}

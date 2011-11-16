@@ -1,3 +1,36 @@
+Changes from Version 0.15-7 to 0.15-8 [16-Nov-2011]
+
+* Added support for is.fullrank testing for generalized local
+  polynomial kernel regression for cross-validation (default remains
+  ridging a la Seifert & Gasser), replaced rcond(t(X)%*%X) with
+  is.fullrank(X) (smaller memory footprint for large datasets)
+
+* Fixed glitch with derivative computation when one or more degrees is
+  0 when kernel=TRUE and additionally when one or more factors is
+  excluded when using kernel=FALSE
+
+* Fixed issue with reported cross-validation score only corresponding
+  to leave-one-out cross-validation by passing back cv function from
+  solver rather than computing post estimation
+
+* Added ability to estimate quantile regression splines
+
+* More rigorous testing for rank deficient fit via rcond() in cv
+  function
+
+* Fixed issue where degree.min was set > 1 but initial degree was 1
+  (corresponding to the linear model which is the default for the
+  initial degree otherwise)
+
+* Added the option to treat the continuous bandwidths as discrete with
+  lambda.discrete.num+1 values in the range [0,1] which can be more
+  computationally efficient when a `quick and dirty' solution is
+  sufficient rather than conducting mixed integer search treating the
+  lambda as real-valued
+
+* Corrected incorrect warning about using basis="auto" when there was
+  only one continuous predictor
+
 Changes from Version 0.15-6 to 0.15-7 [24-Oct-2011]
 
 * Added logical model.return to crs (default model.return=FALSE) which

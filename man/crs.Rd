@@ -25,6 +25,7 @@ crs(\dots)
     data.return = FALSE,
     prune = FALSE,
     model.return = FALSE,
+    tau = NULL,
     \dots)
 
 \method{crs}{formula}(formula,
@@ -41,6 +42,8 @@ crs(\dots)
     cv.func = c("cv.ls","cv.gcv","cv.aic"),
     kernel = TRUE,
     lambda = NULL,
+    lambda.discrete = FALSE,
+    lambda.discrete.num = 100,
     complexity = c("degree-knots","degree","knots"),
     knots = c("quantiles","uniform","auto"),
     basis = c("additive","tensor","glp","auto"),
@@ -55,7 +58,8 @@ crs(\dots)
                 "INITIAL_MESH_SIZE"="r1.0e-01",
                 "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
                 "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep="")),
-    nmulti = 5, 
+    nmulti = 5,
+    tau = NULL,
     \dots)
 }
 \arguments{
@@ -79,7 +83,15 @@ nominal/ordinal (\code{\link{factor}}/\code{\link{ordered}}) predictors
 in \code{x} are included or omitted from the resulting estimate }
 
   \item{lambda}{ a vector of bandwidths for each dimension of the
-  categorical \code{z}}
+    categorical \code{z}}
+
+  \item{lambda.discrete}{ if \code{lambda.discrete=TRUE}, the bandwidth
+      will be discretized into \code{lambda.discrete.num+1} points and
+      \code{lambda} will be chosen from these points}
+  
+  \item{lambda.discrete.num}{a positive integer indicating the number of
+  discrete values that lambda can assume - this parameter will only be
+  used when \code{lambda.discrete=TRUE}}
   
   \item{formula}{ a symbolic description of the model to be fit }
   
@@ -193,7 +205,12 @@ in \code{x} are included or omitted from the resulting estimate }
     the cross-validation function from different (random) initial
     points (default \code{nmulti=5})
   }
-
+  \item{tau}{
+    if non-null a number in (0,1) denoting the quantile for which a quantile
+    regression spline is to be estimated rather than estimating the
+    conditional mean (default \code{tau=NULL}). Criterion function set
+    by \code{cv.func=} are modified accordingly to admit quantile regression.
+  }
  
   \item{\dots}{ optional arguments }
   
@@ -383,9 +400,9 @@ in \code{x} are included or omitted from the resulting estimate }
 }
 \references{
 
-  M.A. Abramson, C. Audet, G. Couture, J.E. Dennis, Jr., and S. Le
-  Digabel (2011), \dQuote{The NOMAD project}. Software available at
-  http://www.gerad.ca/nomad.
+  Abramson, M.A. and C. Audet and G. Couture and J.E. Dennis Jr. and and
+  S. Le Digabel (2011), \dQuote{The NOMAD project}. Software available
+  at http://www.gerad.ca/nomad.
 
   Craven, P. and G. Wahba (1979), \dQuote{Smoothing noisy data with
     spline functions,} Numerische Mathematik, 13, 377-403.
@@ -399,9 +416,12 @@ in \code{x} are included or omitted from the resulting estimate }
     using an improved Akaike information criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
-  S. Le Digabel (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
+  Le Digabel, S. (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
   optimization with the MADS algorithm}. ACM Transactions on
   Mathematical Software, 37(4):44:1-44:15.
+
+  Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
+    Theory and Practice,} Princeton University Press.
 
   Ma, S. and J.S. Racine and L. Yang (2011), \dQuote{Spline Regression
   in the Presence of Categorical Predictors,} manuscript.
@@ -409,8 +429,8 @@ in \code{x} are included or omitted from the resulting estimate }
   Ma, S. and J.S. Racine (2011), \dQuote{Additive Regression Splines
   With Irrelevant Categorical and Continuous Regressors,} manuscript.
 
-  Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
-  Theory and Practice,} Princeton University Press.
+  Racine, J.S. (2011), \dQuote{Cross-Validated Quantile Regression
+  Splines,} manuscript.
 
 }
 

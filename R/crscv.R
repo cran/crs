@@ -17,7 +17,8 @@ crscv <- function(K,
                   cv.objc,
                   cv.objc.vec,
                   num.x,
-                  cv.func) {
+                  cv.func,
+                  tau) {
 
     tregcv = list(K=K,
                   I=I,
@@ -38,7 +39,8 @@ crscv <- function(K,
                   cv.objc=cv.objc,
                   cv.objc.vec=cv.objc.vec,
                   num.x=num.x,
-                  cv.func=cv.func)
+                  cv.func=cv.func,
+                  tau=tau)
 
   class(tregcv) <- "crscv"
 
@@ -86,7 +88,7 @@ print.crscv <- function(x, ...){
     cat("\n\n")
   } else {
     cat("\nRegression Spline Cross-Validation",sep="")
-    cat(paste("\n\nObjective Function Value : ",format(x$cv.objc),sep=""),sep="")
+    cat(paste("\n\nObjective Function Value: ",format(x$cv.objc),sep=""),sep="")
 
     cat(paste("\n\nKnot type: ", format(x$knots), sep=""))    
     cat(paste("\nModel complexity proxy: ", format(x$complexity), sep=""))
