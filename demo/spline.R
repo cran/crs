@@ -128,9 +128,8 @@ prod.spline <- function(x,
         if(deriv!=0) {
           P.deriv <- list()
           for(i in 1:length(tp)) P.deriv[[i]] <- matrix(0,1,ncol(tp[[i]]))
-          ## Nov 11 2011, DC, is this the last remaining issue for derivs?
           deriv.index <- deriv.index - length(which((K[,1]==0)))
-          while(deriv.index[1]==0) deriv.index <- deriv.index + 1
+          while(deriv.index<=0) deriv.index <- deriv.index + 1
           P.deriv[[deriv.index]] <- matrix(NA,1,ncol(tp[[deriv.index]]))
           P[,!is.na(as.numeric(glp.model.matrix(P.deriv)))] <- 0
         }
@@ -1215,6 +1214,11 @@ cv.kernel.spline <- function(x,
 
   n <- length(y)
 
+  ## Check dimension of P prior to calculating the basis
+
+  if(dim.bs(basis=basis,kernel=TRUE,degree=K[,1],segments=K[,2]) >= (n-1))
+    return(sqrt(.Machine$double.xmax))
+
   ## Otherwise, compute the cross-validation function
 
   if(is.null(z)) {
@@ -1461,6 +1465,18 @@ cv.factor.spline <- function(x,
   cv.func <- match.arg(cv.func)
 
   n <- NROW(x)
+
+  ## Check dimension of P prior to calculating the basis
+
+  if(is.null(I)) {
+    categories <- NULL
+  } else {
+    categories <- numeric()
+    for(i in NCOL(z)) categories[i] <- length(unique(z[,i]))
+  }
+
+  if(dim.bs(basis=basis,kernel=TRUE,degree=K[,1],segments=K[,2],include=I,categories=categories) >= (n-1))
+    return(sqrt(.Machine$double.xmax))
 
   ## Otherwise, compute the cross-validation function
 

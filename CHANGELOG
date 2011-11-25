@@ -1,3 +1,16 @@
+Changes from Version 0.15-8 to 0.15-9 [25-Nov-2011]
+
+* Fixed glitch when computing derivatives with crs and multiple
+  predictors are of degree zero
+
+* Added support for parallel npglpreg (calls npRmpi rather than np -
+  see demo)
+
+* Improved handling of complex bases via dim.bs (test for negative
+  degrees of freedom prior to attempting to construct the basis
+  function - dramatically reduces memory overhead and can cut down on
+  unnecessary computation)
+
 Changes from Version 0.15-7 to 0.15-8 [16-Nov-2011]
 
 * Added support for is.fullrank testing for generalized local

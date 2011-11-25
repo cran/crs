@@ -36,6 +36,7 @@ mypoly <- function(x,
   if(missing(x)) stop(" Error: x required")
   if(missing(degree)) stop(" Error: degree required")
   if(degree < 1) stop(" Error: degree must be a positive integer")
+  if(!is.logical(Bernstein)) stop(" Error: Bernstein must be logical")
 
   if(!Bernstein) {
 
@@ -294,12 +295,22 @@ npglpreg.default <- function(tydat=NULL,
                              bwtype = c("fixed","generalized_nn","adaptive_nn"),
                              gradient.vec=NULL,
                              gradient.categorical=FALSE,
+                             cv.shrink=TRUE,
+                             cv.warning=FALSE,
                              Bernstein=TRUE,
+                             mpi=FALSE,
                              ...) {
 
   ukertype <- match.arg(ukertype)
   okertype <- match.arg(okertype)
   bwtype <- match.arg(bwtype)
+
+  ### Nov. 23, issue is that if you don't shrink for estimation you
+  ### can barf, so we only set shrink=FALSE when conducting CV. This
+  ### occurs because glpcvNOMAD uses the leave-one-out estimator, here
+  ### we use full sample, so it is possible for the leave-one-out to
+  ### have fullrank but the full sample to fail. Thus we need to use
+  ### ridging for estimation hence override the value here.
 
   est <- glpregEst(tydat=tydat,
                    txdat=txdat,
@@ -312,8 +323,12 @@ npglpreg.default <- function(tydat=NULL,
                    okertype=okertype,
                    bwtype=bwtype,
                    gradient.vec=gradient.vec,
+                   cv.shrink=TRUE, ## Override
+                   cv.warning=cv.warning,                   
                    Bernstein=Bernstein,
                    ...)
+
+  est$cv.shrink <- cv.shrink
 
   ## Gradients for categorical predictors (here we just compute them
   ## all though gradient for continuous predictors given above
@@ -360,6 +375,8 @@ npglpreg.default <- function(tydat=NULL,
                               okertype=okertype,
                               bwtype=bwtype,
                               gradient.vec=NULL,
+                              cv.shrink=TRUE, ## Override
+                              cv.warning=cv.warning,                   
                               Bernstein=Bernstein,
                               ...)
 
@@ -419,6 +436,9 @@ summary.npglpreg <- function(object,
   } else {
     cat("\nPolynomial type: raw")
   }
+
+  if(object$cv.shrink)
+    cat("\nUsing Seifert & Gasser shrinkage for cross-validation")
 
   if(object$num.numeric == 1){
     cat(paste("\nThere is ",format(object$num.numeric), " continuous predictor",sep=""),sep="")
@@ -491,6 +511,7 @@ predict.npglpreg <- function(object,
     ukertype <- object$ukertype
     okertype <- object$okertype
     Bernstein <- object$Bernstein
+    mpi <- object$mpi
     if(is.null(gradient.vec)) {
       gradient.vec <- object$gradient.vec
     } 
@@ -509,6 +530,8 @@ predict.npglpreg <- function(object,
 
     ## Return the predicted values.
 
+    ## Nov 22 XXX - do we need to feed cv.shrink and cv.warning here???
+
     est <- npglpreg.default(tydat=tydat,
                             txdat=txdat,
                             exdat=exdat,
@@ -520,6 +543,7 @@ predict.npglpreg <- function(object,
                             bwtype=bwtype,
                             gradient.vec=gradient.vec,
                             Bernstein=Bernstein,
+                            mpi=mpi,
                             ...)
     
     fitted.values <- est$fitted.values
@@ -563,18 +587,25 @@ npglpreg.formula <- function(formula,
                              bandwidth.min=1.0e-02,
                              gradient.vec=NULL,
                              gradient.categorical=FALSE,
-                             ridge=TRUE,
-                             ridge.warning=FALSE,
+                             cv.shrink=TRUE,
+                             cv.warning=FALSE,
                              Bernstein=TRUE,
+                             mpi=FALSE,
                              ...) {
 
-  if(!require(np)) stop(" Error: you must install the np package to use this function")
+  if(!is.logical(mpi)) stop(" Error: mpi must be logical (TRUE/FALSE)")
   if(!is.logical(Bernstein)) stop(" Error: Bernstein must be logical (TRUE/FALSE)")
   if(!is.logical(gradient.categorical)) stop(" Error: gradient.categorical must be logical (TRUE/FALSE)")
-  if(!is.logical(ridge.warning)) stop(" Error: ridge.warning must be logical (TRUE/FALSE)")
+  if(!is.logical(cv.warning)) stop(" Error: cv.warning must be logical (TRUE/FALSE)")
   if(!is.logical(leave.one.out)) stop(" Error: leave.one.out must be logical (TRUE/FALSE)")    
   if(degree.max > 100) stop(paste(" degree.max (",degree.max,") exceeds reasonable value (",100,")",sep=""))
 
+  if(!mpi) {
+    if(!require(np)) stop(" Error: you must install the np package to use this function")
+  } else {
+    if(!require(npRmpi)) stop(" Error: you must install the npRmpi package to use this function")
+  }
+  
   ukertype <- match.arg(ukertype)
   okertype <- match.arg(okertype)
   bwtype <- match.arg(bwtype)
@@ -606,9 +637,10 @@ npglpreg.formula <- function(formula,
                                                    degree.min=degree.min,
                                                    bandwidth.max=bandwidth.max,
                                                    bandwidth.min=bandwidth.min,
-                                                   ridge=ridge,                                                   
-                                                   ridge.warning=ridge.warning,
+                                                   cv.shrink=cv.shrink,                                                   
+                                                   cv.warning=cv.warning,
                                                    Bernstein=Bernstein,
+                                                   mpi=mpi,
                                                    ...))
     degree <- model.cv$degree
     bws <- model.cv$bws
@@ -616,7 +648,7 @@ npglpreg.formula <- function(formula,
     fv <- model.cv$fv
     if(isTRUE(all.equal(fv,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with larger nmulti or smaller degree.max (or degree if provided)")
   }
-  
+
   if(!is.null(degree))    {
     ill.conditioned <- check.max.degree(txdat,degree,issue.warning=TRUE,Bernstein=Bernstein)
     degree.max.vec <- attr(ill.conditioned, "degree.max.vec")
@@ -635,11 +667,13 @@ npglpreg.formula <- function(formula,
                                                    bwtype=bwtype,
                                                    gradient.vec=gradient.vec,
                                                    gradient.categorical=gradient.categorical,
-                                                   ridge=ridge,
-                                                   ridge.warning=ridge.warning,                                                   
+                                                   cv.shrink=TRUE, ## Must override cv.shrink here
+                                                   cv.warning=cv.warning,
                                                    Bernstein=Bernstein,
+                                                   mpi=mpi,
                                                    ...))
   
+
   est$call <- match.call()
   est$formula <- formula
   est$terms <- mt
@@ -666,8 +700,8 @@ glpregEst <- function(tydat=NULL,
                       okertype=c("liracine","wangvanryzin"),
                       bwtype=c("fixed","generalized_nn","adaptive_nn"),
                       gradient.vec=NULL,
-                      ridge=TRUE,
-                      ridge.warning=FALSE,
+                      cv.shrink=TRUE,
+                      cv.warning=FALSE,
                       Bernstein=TRUE,
                       ...) {
 
@@ -784,16 +818,21 @@ glpregEst <- function(tydat=NULL,
                 categorical.index = categorical.index,
                 numeric.index = numeric.index,
                 gradient.vec = gradient.vec,
+                cv.shrink = cv.shrink,
                 Bernstein = Bernstein))
     
   } else {
+
+    ## Test for negative degrees of freedom
+
+    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>n.train-1)
+      stop(" Ill-conditioned polynomial basis encountered: modify polynomial order")      
 
     W <- W.glp(xdat=txdat,
                degree=degree,
                Bernstein=Bernstein)
 
-    ## Test for ill-conditioned polynomial basis and return a large
-    ## penalty when this occurs
+    ## Test for ill-conditioned polynomial basis
 
     if(!is.fullrank(W))
       stop(" Ill-conditioned polynomial basis encountered: modify polynomial order")
@@ -860,7 +899,7 @@ glpregEst <- function(tydat=NULL,
     tyw <- array(tww,dim = c(ncol(W)+1,ncol(W),n.eval))[1,,]
     tww <- array(tww,dim = c(ncol(W)+1,ncol(W),n.eval))[-1,,]
 
-    if(!ridge) {
+    if(!cv.shrink) {
       ## We can choose to use ridging or simply check for less than
       ## full column rank. If we test for full column rank ridging
       ## ought never occur but this is quite strong as if one
@@ -868,8 +907,8 @@ glpregEst <- function(tydat=NULL,
       ## the rest of the sample this may not be the case.
       for(i in 1:n.eval) {
         if(!is.fullrank(tww[,,i])) {
-          if(ridge.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed",sep=""),console = console)
-          return(sqrt(.Machine$double.xmax))
+          if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
+          return(maxPenalty)
         }
       }
     }
@@ -897,13 +936,13 @@ glpregEst <- function(tydat=NULL,
                error = function(e){
                  ridge[i] <<- ridge[i]+epsilon
                  doridge[i] <<- TRUE
-                 if(ridge.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
+                 if(cv.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
                  return(rep(maxPenalty,nc))
                })
     }
 
     ## Test for singularity of the generalized local polynomial
-    ## estimator, shrink the mean towards the local constant mean.
+    ## estimator, cv.shrink the mean towards the local constant mean.
 
     while(any(doridge)){
       iloo <- (1:n.eval)[doridge]
@@ -937,11 +976,14 @@ glpregEst <- function(tydat=NULL,
                 categorical.index = categorical.index,
                 numeric.index = numeric.index,
                 gradient.vec = gradient.vec,
+                cv.shrink = cv.shrink,
                 Bernstein = Bernstein))
     
   }
 
 }
+
+## Could we just call glpregEst within (here and cv.aic?)
 
 minimand.cv.ls <- function(bws=NULL,
                            ydat=NULL,
@@ -951,8 +993,8 @@ minimand.cv.ls <- function(bws=NULL,
                            ukertype=c("liracine","aitchisonaitken"),
                            okertype=c("liracine","wangvanryzin"),
                            bwtype = c("fixed","generalized_nn","adaptive_nn"),
-                           ridge=TRUE,
-                           ridge.warning=FALSE,
+                           cv.shrink=TRUE,
+                           cv.warning=FALSE,
                            ...) {
 
   ukertype <- match.arg(ukertype)
@@ -970,6 +1012,19 @@ minimand.cv.ls <- function(bws=NULL,
   n <- length(ydat)
 
   maxPenalty <- sqrt(.Machine$double.xmax)
+
+  if(!is.null(W)) {
+    ## Check for positive degrees of freedom  
+    if(ncol(W) >= nrow(W)-1) {
+      if(cv.warning) console <- printPush(paste("\rWarning: negative degrees of freedom                           ",sep=""),console = console)
+      return(maxPenalty)
+    }
+    ## Check for full column rank
+    if(!is.fullrank(W)) {
+      if(cv.warning) console <- printPush(paste("\rWarning: negative degrees of freedom                           ",sep=""),console = console)
+      return(maxPenalty)
+    }
+  }
 
   console <- newLineConsole()
   console <- printClear(console)
@@ -1006,7 +1061,7 @@ minimand.cv.ls <- function(bws=NULL,
 
       fv <- ifelse(is.finite(fv),fv,maxPenalty)
 
-      console <- printPush("\r                                                ",console = console)
+      console <- printPush("\r                                                                         ",console = console)
       console <- printPush(paste("\rfv = ",format(fv)," ",sep=""),console = console)
 
       return(fv)
@@ -1031,7 +1086,7 @@ minimand.cv.ls <- function(bws=NULL,
       tyw <- array(tww,dim = c(ncol(W)+1,ncol(W),n))[1,,]
       tww <- array(tww,dim = c(ncol(W)+1,ncol(W),n))[-1,,]
 
-      if(!ridge) {
+      if(!cv.shrink) {
         ## We can choose to use ridging or simply check for less than
         ## full column rank. If we test for full column rank ridging
         ## ought never occur but this is quite strong as if one
@@ -1039,8 +1094,8 @@ minimand.cv.ls <- function(bws=NULL,
         ## the rest of the sample this may not be the case.
         for(i in 1:n) {
           if(!is.fullrank(tww[,,i])) {
-            if(ridge.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed",sep=""),console = console)
-            return(sqrt(.Machine$double.xmax))
+            if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
+            return(maxPenalty)
           }
         }
       }
@@ -1063,7 +1118,7 @@ minimand.cv.ls <- function(bws=NULL,
                 error = function(e){
                   ridge[i] <<- ridge[i]+epsilon
                   doridge[i] <<- TRUE
-                  if(ridge.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
+                  if(cv.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
                   return(rep(maxPenalty,nc))
                 })
       }
@@ -1081,7 +1136,7 @@ minimand.cv.ls <- function(bws=NULL,
 
       fv <- ifelse(is.finite(fv),fv,maxPenalty)
 
-      console <- printPush("\r                                                ",console = console)
+      console <- printPush("\r                                                                         ",console = console)
       console <- printPush(paste("\rfv = ",format(fv)," ",sep=""),console = console)
 
       return(fv)
@@ -1100,8 +1155,8 @@ minimand.cv.aic <- function(bws=NULL,
                             ukertype=c("liracine","aitchisonaitken"),
                             okertype=c("liracine","wangvanryzin"),
                             bwtype = c("fixed","generalized_nn","adaptive_nn"),
-                            ridge=TRUE,
-                            ridge.warning=FALSE,
+                            cv.shrink=TRUE,
+                            cv.warning=FALSE,
                             ...) {
 
   ukertype <- match.arg(ukertype)
@@ -1119,6 +1174,19 @@ minimand.cv.aic <- function(bws=NULL,
   n <- length(ydat)
 
   maxPenalty <- sqrt(.Machine$double.xmax)
+
+  if(!is.null(W)) {
+    ## Check for positive degrees of freedom  
+    if(ncol(W) >= nrow(W)-1) {
+      if(cv.warning) console <- printPush(paste("\rWarning: negative degrees of freedom                           ",sep=""),console = console)
+      return(maxPenalty)
+    }
+    ## Check for full column rank
+    if(!is.fullrank(W)) {
+      if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
+      return(maxPenalty)
+    }
+  }
 
   console <- newLineConsole()
   console <- printClear(console)
@@ -1188,7 +1256,7 @@ minimand.cv.aic <- function(bws=NULL,
       tyw <- array(tww,dim = c(ncol(W)+1,ncol(W),n))[1,,]
       tww <- array(tww,dim = c(ncol(W)+1,ncol(W),n))[-1,,]
 
-      if(!ridge) {
+      if(!cv.shrink) {
         ## We can choose to use ridging or simply check for less than
         ## full column rank. If we test for full column rank ridging
         ## ought never occur but this is quite strong as if one
@@ -1196,8 +1264,8 @@ minimand.cv.aic <- function(bws=NULL,
         ## the rest of the sample this may not be the case.
         for(i in 1:n) {
           if(!is.fullrank(tww[,,i])) {
-            if(ridge.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed",sep=""),console = console)
-            return(sqrt(.Machine$double.xmax))
+            if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
+            return(maxPenalty)
           }
         }
       }
@@ -1220,7 +1288,7 @@ minimand.cv.aic <- function(bws=NULL,
                 error = function(e){
                   ridge[i] <<- ridge[i]+epsilon
                   doridge[i] <<- TRUE
-                  if(ridge.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
+                  if(cv.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
                   return(rep(maxPenalty,nc))
                 })
       }
@@ -1242,7 +1310,7 @@ minimand.cv.aic <- function(bws=NULL,
 
       fv <- ifelse(is.finite(fv),fv,maxPenalty)
 
-      console <- printPush("\r                                                ",console = console)
+      console <- printPush("\r                                                                         ",console = console)
       console <- printPush(paste("\rfv = ",format(fv)," ",sep=""),console = console)
 
       return(fv)
@@ -1317,6 +1385,9 @@ glpcv <- function(ydat=NULL,
 
   if(debug) write(c("cv",paste(rep("x",num.bw),seq(1:num.bw),sep="")),file="optim.debug",ncol=(num.bw+1))
 
+  if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>ncol(xdat)-1)
+    return(maxPenalty)
+
   ## Pass in the local polynomial weight matrix rather than
   ## recomputing with each iteration.
 
@@ -1324,8 +1395,15 @@ glpcv <- function(ydat=NULL,
              degree=degree,
              Bernstein=Bernstein)
 
+  ## Check for positive degrees of freedom
+
+  if(ncol(W) >= nrow(W)-1)
+    return(maxPenalty)
+
+  ## Check for full column rank
+
   if(!is.fullrank(W))
-    return(sqrt(.Machine$double.xmax))
+    return(maxPenalty)
 
   sum.lscv <- function(bw.gamma,...) {
 
@@ -1518,9 +1596,10 @@ glpcvNOMAD <- function(ydat=NULL,
                          "INITIAL_MESH_SIZE"=paste("r",1.0e-04,sep=""),
                          "MIN_MESH_SIZE"=paste("r",1.0e-05,sep=""),
                          "MIN_POLL_SIZE"=paste("r",1.0e-05,sep="")),
-                       ridge=TRUE,
-                       ridge.warning=FALSE,
+                       cv.shrink=TRUE,
+                       cv.warning=FALSE,
                        Bernstein=TRUE,
+                       mpi=FALSE,
                        ...) {
 
   ## Save the seed prior to setting
@@ -1588,7 +1667,7 @@ glpcvNOMAD <- function(ydat=NULL,
 
   if(!is.null(degree) && length(degree) != num.numeric) stop(paste(" Error: degree vector supplied has ", length(degree), " elements but there exist ", num.numeric," numeric.predictors",sep=""))
 
-  xdat.unordered <- sapply(1:num.bw,function(i){is.factor(xdat[,i])&&!is.ordered(xdat[,i])})
+  xdat.unordered <- sapply(1:num.bw,function(i){is.factor(xdat[,i])&!is.ordered(xdat[,i])})
   num.unordered <- ncol(as.data.frame(xdat[,xdat.unordered]))
 
   if(cv=="degree-bandwidth") {
@@ -1648,7 +1727,6 @@ glpcvNOMAD <- function(ydat=NULL,
     if(cv == "degree-bandwidth") {
       degree <- numeric(num.numeric)
       for(i in 1:num.numeric) {
-#        degree[i] <- sample(degree.min:ub[(num.bw+1):(num.bw+num.numeric)][i], 1)
         degree[i] <- 1;## Always start from local linear for first attempt...
       }
     }
@@ -1674,20 +1752,22 @@ glpcvNOMAD <- function(ydat=NULL,
     ukertype <- params$ukertype
     okertype <- params$okertype
     bwtype <- params$bwtype
-    ridge <- params$ridge
-    ridge.warning <- params$ridge.warning    
+    cv.shrink <- params$cv.shrink
+    cv.warning <- params$cv.warning    
     Bernstein <- params$Bernstein
 
     bw.gamma <- input[1:num.bw]
     if(cv=="degree-bandwidth")
       degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
 
+    ## Test for negative degrees of freedom
+
+    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
+      return(maxPenalty)
+
     W <- W.glp(xdat=xdat,
                degree=degree,
                Bernstein=Bernstein)
-
-    if(!is.fullrank(W))
-      return(sqrt(.Machine$double.xmax))
 
     if(all(bw.gamma>=0)&&all(bw.gamma[!xdat.numeric]<=1)) {
       lscv <- minimand.cv.ls(bws=bw.gamma,
@@ -1698,8 +1778,8 @@ glpcvNOMAD <- function(ydat=NULL,
                              ukertype=ukertype,
                              okertype=okertype,
                              bwtype=bwtype,
-                             ridge=ridge,
-                             ridge.warning=ridge.warning,
+                             cv.shrink=cv.shrink,
+                             cv.warning=cv.warning,
                              ...)
     } else {
       lscv <- maxPenalty
@@ -1721,20 +1801,20 @@ glpcvNOMAD <- function(ydat=NULL,
     ukertype <- params$ukertype
     okertype <- params$okertype
     bwtype <- params$bwtype
-    ridge <- params$ridge
-    ridge.warning <- params$ridge.warning    
+    cv.shrink <- params$cv.shrink
+    cv.warning <- params$cv.warning    
     Bernstein <- params$Bernstein
     
     bw.gamma <- input[1:num.bw]
     if(cv=="degree-bandwidth")
       degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
 
+    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
+      return(maxPenalty)
+
     W <- W.glp(xdat=xdat,
                degree=degree,
                Bernstein=Bernstein)
-
-    if(!is.fullrank(W))
-      return(sqrt(.Machine$double.xmax))
 
     if(all(bw.gamma>=0)&&all(bw.gamma[!xdat.numeric]<=1)) {
       aicc <- minimand.cv.aic(bws=bw.gamma,
@@ -1745,8 +1825,8 @@ glpcvNOMAD <- function(ydat=NULL,
                               ukertype=ukertype,
                               okertype=okertype,
                               bwtype=bwtype,
-                              ridge=ridge,
-                              ridge.warning=ridge.warning,
+                              cv.shrink=cv.shrink,
+                              cv.warning=cv.warning,
                               ...)
     } else {
       aicc <- maxPenalty
@@ -1769,8 +1849,8 @@ glpcvNOMAD <- function(ydat=NULL,
   params$ukertype <- ukertype
   params$okertype <- okertype
   params$bwtype <- bwtype
-  params$ridge <- ridge  
-  params$ridge.warning <- ridge.warning
+  params$cv.shrink <- cv.shrink  
+  params$cv.warning <- cv.warning
   params$Bernstein <- Bernstein
 
   ## No constraints
@@ -1802,7 +1882,7 @@ glpcvNOMAD <- function(ydat=NULL,
     init.search.vals <- runif(num.bw,0,1)
     for(i in 1:num.bw) {
       if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-        init.search.vals[i] <- runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
+        init.search.vals[i] <- bandwidth.min + runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
       } 
       if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
         init.search.vals[i] <- round(runif(1,2,sqrt(ub[i])))
@@ -1824,7 +1904,7 @@ glpcvNOMAD <- function(ydat=NULL,
       init.search.vals <- runif(num.bw,0,1)
       for(i in 1:num.bw) {
         if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-          init.search.vals[i] <- runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
+          init.search.vals[i] <- bandwidth.min + runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
         }
         if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
           init.search.vals[i] <- round(runif(1,2,sqrt(ub[i])))

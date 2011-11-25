@@ -28,7 +28,10 @@ npglpreg(\dots)
          bwtype = c("fixed", "generalized_nn", "adaptive_nn"),
          gradient.vec = NULL,
          gradient.categorical = FALSE,
+         cv.shrink = TRUE,
+         cv.warning = FALSE,
          Bernstein = TRUE,
+         mpi = FALSE,
          \dots)
 
 \method{npglpreg}{formula}(formula,
@@ -58,9 +61,10 @@ npglpreg(\dots)
          bandwidth.min = 1.0e-02,
          gradient.vec = NULL,
          gradient.categorical = FALSE,
-         ridge = TRUE,
-         ridge.warning = FALSE,
+         cv.shrink = TRUE,
+         cv.warning = FALSE,
          Bernstein = TRUE,
+         mpi = FALSE,
          \dots)
 }
 
@@ -180,22 +184,28 @@ for each dimension of the continuous \code{x} in \code{txdat}}
   categorical predictor) are to be computed
 }
 
-\item{ridge}{ a logical value indicating whether to use ridging (Seifert
-  and Gasser (2000)) for ill-conditioned inversion (default
-  \code{ridge=TRUE}) or to instead test for ill-conditioned matrices and
-  penalize heavily when this is the case (much stronger condition
-  imposed on cross-validation)}
+\item{cv.shrink}{ a logical value indicating whether to use ridging
+  (Seifert and Gasser (2000)) for ill-conditioned inversion during
+  cross-validation (default \code{cv.shrink=TRUE}) or to instead test
+  for ill-conditioned matrices and penalize heavily when this is the
+  case (much stronger condition imposed on cross-validation)}
 
-\item{ridge.warning}{ a logical value indicating whether to issue an
-  immediate warning message when ridging (Seifert and Gasser (2000)) is
-  required for inversion (default \code{ridge.warning=FALSE})
-}
+\item{cv.warning}{ a logical value indicating whether to issue an
+  immediate warning message when ill conditioned bases are encountered
+  during cross-validation (default \code{cv.warning=FALSE}) }
 
 \item{Bernstein}{ a logical value indicating whether to use raw
   polynomials or Bernstein polynomials (default) (note that a Bernstein
   polynomial is also know as a Bezier curve which is also a
   B-spline with no interior knots)
 }
+
+\item{mpi}{ a logical value (default \code{mpi=FALSE}) that, when
+  \code{mpi=TRUE}, can call the \code{npRmpi} rather than the \code{np}
+  package (note - code needs to mirror examples in the demo directory of
+  the \code{npRmpi} package, you need to broadcast loading of the
+  \code{crs} package, and need \code{.Rprofile} in your current
+  directory)}
 
 \item{\dots}{
     additional arguments supplied to specify the regression type,
