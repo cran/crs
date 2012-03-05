@@ -14,7 +14,7 @@ and instruments \eqn{W}. The function \eqn{\varphi}{phi} is the solution
 of an ill-posed inverse problem.
 
 When \code{method="Tikhonov"}, \code{crsiv} uses the approach of
-Darolles, Fan, Florens and Renault (forthcoming) modified for regression
+Darolles, Fan, Florens and Renault (2011) modified for regression
 splines (Darolles et al use local constant kernel weighting). When
 \code{method="Landweber-Fridman"}, \code{crsiv} uses the approach of
 Horowitz (2011) using the regression spline methodology implemented in
@@ -32,9 +32,11 @@ crsiv(y,
       alpha.min = 1e-10,
       alpha.max = 1e-01,
       alpha.tol = .Machine$double.eps^0.25,
-      iterate.max = 100,
-      iterate.tol = 1.0e-05,
+      iterate.max = 1000,
+      iterate.tol = 1.0e-04,
+      iterate.diff.tol = 1.0e-08,
       constant = 0.5,
+      stop.on.increase = TRUE,
       method = c("Landweber-Fridman","Tikhonov"),
       opts = list("MAX_BB_EVAL"=10000,
                   "EPSILON"=.Machine$double.eps,
@@ -107,13 +109,24 @@ crsiv(y,
 \item{iterate.tol}{
   the search tolerance for the stopping rule when using \code{method="Landweber-Fridman"}
 }
+\item{iterate.diff.tol}{
+  the search tolerance for the difference in the stopping rule from
+  iteration to iteration when using \code{method="Landweber-Fridman"}
+    (disable by setting to zero)
+}
 \item{constant}{
   the constant to use when using  \code{method="Landweber-Fridman"}
+}
+\item{stop.on.increase}{
+  a logical value (defaults to \code{TRUE}) indicating whether to halt
+  iteration if the stopping criterion (see below) increases over the
+  course of one iteration (i.e. it may be above the iteration tolerance
+  but increased)
 }
 \item{method}{
   the regularization method employed (default
    \code{"Landweber-Fridman"}, see Horowitz (2011); see Darolles, Fan,
-   Florens and Renault (forthcoming) for details for \code{"Tikhonov"})
+   Florens and Renault (2011) for details for \code{"Tikhonov"})
  }
   \item{opts}{
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
@@ -125,12 +138,19 @@ crsiv(y,
   categorical predictor) or not and if so what order. Note that if
   \code{deriv} is higher than the spline degree of the associated
   continuous predictor then the derivative will be zero and a warning
-  issued to this effect
+  issued to this effect (see important note below)
   }
 \item{...}{
   additional arguments supplied to \code{\link{crs}}
 }
 }
+\note{
+  Using the option \code{deriv=} computes (effectively) the analytical
+  derivative of the estimated \eqn{\varphi(Z,X)}{phi(Z,X)} and not that
+  using \code{\link{crsivderiv}}, which instead uses the method of
+  Florens and Racine (2012). Though both are statistically consistent,
+  practioners may desire one over the other hence we provide both.
+ }
 \details{
   Tikhonov regularization requires computation of weight matrices of
   dimension \eqn{n\times n}{n x n} which can be computationally costly
@@ -189,7 +209,7 @@ crsiv(y,
     See \code{\link{crs}} for details on the return object components.
 
     In addition to the standard \code{\link{crs}} components,
-    \code{crsiv} returns components \code{phihat} and either
+    \code{crsiv} returns components \code{phi} and either
     \code{alpha} when \code{method="Tikhonov"} or \code{num.iterations}
     and \code{norm.stop} when \code{method="Landweber-Fridman"}.
     
@@ -203,12 +223,16 @@ crsiv(y,
   Edward E. Leamer, Editor(s), Handbook of Econometrics, Elsevier, 2007,
   Volume 6, Part 2, Chapter 77, Pages 5633-5751
 
-  Darolles, S. and Y. Fan and J.P. Florens and E. Renault (forthcoming),
-  \dQuote{Nonparametric Instrumental Regression,} Econometrica.
-
+  Darolles, S. and Y. Fan and J.P. Florens and E. Renault (2011),
+  \dQuote{Nonparametric Instrumental Regression,} Econometrica, 79,
+  1541-1565.
+  
   Feve, F. and J.P. Florens (2010), \dQuote{The practice of
   non-parametric estimation by solving inverse problems: the example of
   transformation models,} Econometrics Journal, 13, S1-S27.
+
+  Florens, J.P. and J.S. Racine (2012), \dQuote{Nonparametric
+  Instrumental Derivatives,} Working Paper.
 
   Fridman, V. M. (1956), \dQuote{A Method of Successive Approximations
   for Fredholm Integral Equations of the First Kind,} Uspeskhi,
@@ -242,16 +266,6 @@ This function should be considered to be in `beta test' status until further not
 
 set.seed(42)
 n <- 1500
-
-## Turn off display I/O for crs() NOMAD search (i.e. keep the standard
-## defaults and add "DISPLAY_DEGREE"=0)...
-
-opts <- list("MAX_BB_EVAL"=10000,
-             "EPSILON"=.Machine$double.eps,
-             "INITIAL_MESH_SIZE"="r1.0e-01",
-             "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
-             "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
-             "DISPLAY_DEGREE"=0)
 
 ## The DGP is as follows:
 

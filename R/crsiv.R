@@ -17,9 +17,9 @@
 
 ## ... optional arguments for crs()
 
-## This function returns a list with the following elements:
+## This function returns a list with some of the following elements:
 
-## phihat: the IV estimator of phi(y)
+## phi: the IV estimator of phi(y)
 ## alpha:  the Tikhonov regularization parameter
 ## num.iterations:  the number of Landweber-Fridman iterations
 ## norm.stop: the vector of values of the objective function used for stopping
@@ -35,9 +35,11 @@ crsiv <- function(y,
                   alpha.min=1.0e-10,
                   alpha.max=1.0e-01,
                   alpha.tol=.Machine$double.eps^0.25,
-                  iterate.max=100,
-                  iterate.tol=1.0e-05,
+                  iterate.max=1000,
+                  iterate.tol=1.0e-04,
+                  iterate.diff.tol=1.0e-08,
                   constant=0.5,
+                  stop.on.increase=TRUE,
                   method=c("Landweber-Fridman","Tikhonov"),
                   opts=list("MAX_BB_EVAL"=10000,
                             "EPSILON"=.Machine$double.eps,
@@ -47,6 +49,8 @@ crsiv <- function(y,
                             "DISPLAY_DEGREE"=0),
                   deriv=0,
                   ...) {
+
+  crs.messages <- getOption("crs.messages")
 
   ## This function was constructed initially by Samuele Centorrino
   ## <samuele.centorrino@univ-tlse1.fr>
@@ -145,6 +149,8 @@ crsiv <- function(y,
 
   ## Basic error checking
 
+  if(!is.logical(stop.on.increase)) stop("stop.on.increase must be logical (TRUE/FALSE)")
+
   if(missing(y)) stop("You must provide y")
   if(missing(z)) stop("You must provide z")
   if(missing(w)) stop("You must provide w")
@@ -152,6 +158,9 @@ crsiv <- function(y,
   if(NROW(y) != NROW(z) || NROW(y) != NROW(w)) stop("y, z, and w have differing numbers of rows")
   if(!is.null(x) && NROW(y) != NROW(x)) stop("y and x have differing numbers of rows")
   if(iterate.max < 2) stop("iterate.max must be at least 2")
+  if(constant <= 0 || constant >=1) stop("constant must lie in (0,1)")
+  if(iterate.tol <= 0) stop("iterate.tol must be positive")
+  if(iterate.diff.tol < 0) stop("iterate.diff.tol must be non-negative")
 
   ## Cast as data frames
 
@@ -196,20 +205,20 @@ crsiv <- function(y,
   }
 
   formula.yw <- as.formula(paste("y ~ ", paste(wnames, collapse= "+")))
-  formula.phihatw <- as.formula(paste("phihat ~ ", paste(wnames, collapse= "+")))  
+  formula.phiw <- as.formula(paste("phi ~ ", paste(wnames, collapse= "+")))  
   formula.residw <- as.formula(paste("(y-phi.j.m.1) ~ ", paste(wnames, collapse= "+")))
   formula.residphi0w <- as.formula(paste("residuals(phi.0) ~ ", paste(wnames, collapse= "+")))    
 
   if(is.null(x)) {
     formula.yz <- as.formula(paste("y ~ ", paste(znames, collapse= "+")))
     formula.Eywz <- as.formula(paste("E.y.w ~ ", paste(znames, collapse= "+")))
-    formula.Ephihatwz <- as.formula(paste("E.phihat.w ~ ", paste(znames, collapse= "+")))  
+    formula.Ephiwz <- as.formula(paste("E.phi.w ~ ", paste(znames, collapse= "+")))  
     formula.predictmodelresidphi0z <- as.formula(paste("predict(model.residphi0,newdata=evaldata) ~ ", paste(znames, collapse= "+")))
     formula.predictmodelresidwz <- as.formula(paste("predict(model.residw,newdata=evaldata) ~ ", paste(znames, collapse= "+")))
   } else {
     formula.yz <- as.formula(paste("y ~ ", paste(znames, collapse= "+"), " + ", paste(xnames, collapse= "+")))
     formula.Eywz <- as.formula(paste("E.y.w ~ ", paste(znames, collapse= "+"), " + ", paste(xnames, collapse= "+")))
-    formula.Ephihatwz <- as.formula(paste("E.phihat.w ~ ", paste(znames, collapse= "+"), " + ", paste(xnames, collapse= "+")))  
+    formula.Ephiwz <- as.formula(paste("E.phi.w ~ ", paste(znames, collapse= "+"), " + ", paste(xnames, collapse= "+")))  
     formula.predictmodelresidphi0z <- as.formula(paste("predict(model.residphi0,newdata=evaldata) ~ ", paste(znames, collapse= "+"), " + ", paste(xnames, collapse= "+")))
     formula.predictmodelresidwz <- as.formula(paste("predict(model.residw,newdata=evaldata) ~ ", paste(znames, collapse= "+"), " + ", paste(xnames, collapse= "+")))
   }
@@ -226,7 +235,9 @@ crsiv <- function(y,
     console <- printClear(console)
     console <- printPop(console)
     console <- printPush("Computing weights and optimal smoothing for E(y|w)...", console)
+    if(crs.messages) options(crs.messages=FALSE)
     model<-crs(formula.yw,opts=opts,data=traindata,...)
+    if(crs.messages) options(crs.messages=TRUE)    
     E.y.w <- predict(model,newdata=evaldata)
     B <- model.matrix(model$model.lm)
     KYW <- B%*%solve(t(B)%*%B)%*%t(B)
@@ -240,7 +251,9 @@ crsiv <- function(y,
     } else {
       console <- printPush("Computing weights and optimal smoothing for E(E(y|w)|z,x)...", console)
     }
+    if(crs.messages) options(crs.messages=FALSE)
     model <- crs(formula.Eywz,opts=opts,data=traindata,...)
+    if(crs.messages) options(crs.messages=TRUE)    
     E.E.y.w.z <- predict(model,newdata=evaldata)
     B <- model.matrix(model$model.lm)
     KYWZ <- B%*%solve(t(B)%*%B)%*%t(B)
@@ -262,7 +275,7 @@ crsiv <- function(y,
     }
     
     ## Finally, we conduct regularized Tikhonov regression using this
-    ## optimal alpha to get a first stage estimate of phihat
+    ## optimal alpha to get a first stage estimate of phi
 
     console <- printClear(console)
     console <- printPop(console)
@@ -271,7 +284,7 @@ crsiv <- function(y,
     } else {
       console <- printPush("Computing initial phi(z,x) estimate...", console)
     }
-    phihat <- as.vector(tikh(alpha, CZ = KYW, CY = KYWZ, Cr.r = E.E.y.w.z))
+    phi <- as.vector(tikh(alpha, CZ = KYW, CY = KYWZ, Cr.r = E.E.y.w.z))
 
     ## KYWZ and KZWS no longer used, save memory
     
@@ -286,8 +299,10 @@ crsiv <- function(y,
     } else {
       console <- printPush("Computing optimal smoothing and weights for E(phi(z,x)|w)...", console)
     }
-    model <- crs(formula.phihatw,opts=opts,data=traindata,...)
-    E.phihat.w <- predict(model,newdata=evaldata)
+    if(crs.messages) options(crs.messages=FALSE)
+    model <- crs(formula.phiw,opts=opts,data=traindata,...)
+    if(crs.messages) options(crs.messages=TRUE)    
+    E.phi.w <- predict(model,newdata=evaldata)
     B <- model.matrix(model$model.lm)
     KPHIW <- B%*%solve(t(B)%*%B)%*%t(B)
     
@@ -300,7 +315,9 @@ crsiv <- function(y,
     } else {
       console <- printPush("Computing optimal smoothing and weights for E(E(phi(z,x)|w)|z,x)...", console)
     }
-    model <- crs(formula.Ephihatwz,opts=opts,data=traindata,...)
+    if(crs.messages) options(crs.messages=FALSE)
+    model <- crs(formula.Ephiwz,opts=opts,data=traindata,...)
+    if(crs.messages) options(crs.messages=TRUE)    
     B <- model.matrix(model$model.lm)
     KPHIWZ <- B%*%solve(t(B)%*%B)%*%t(B)
     
@@ -325,7 +342,7 @@ crsiv <- function(y,
     } else {
       console <- printPush("Computing final phi(z,x) estimate...", console)
     }
-    phihat <- as.vector(tikh(alpha, CZ = KPHIW, CY = KPHIWZ, Cr.r = E.E.y.w.z))
+    phi <- as.vector(tikh(alpha, CZ = KPHIW, CY = KPHIWZ, Cr.r = E.E.y.w.z))
     
     console <- printClear(console)
     console <- printPop(console)
@@ -334,17 +351,22 @@ crsiv <- function(y,
     if((alpha.max-alpha)/alpha.max < 0.01) warning(paste(" Tikhonov parameter alpha (",formatC(alpha,digits=4,format="f"),") is close to the search maximum (",alpha.max,")",sep=""))
     
     ## phi.0 is the conditional mean model. We compute lambda =
-    ## fitted(phi.0)-phihat then transform y via
+    ## fitted(phi.0)-phi then transform y via
     ## y.lambda=y-lambda. Here we overwrite y so that we can reuse the
     ## formula. Before that, save the proper residuals and then push
     ## these into the model. June 9 2011 - I am concerned because
-    ## phihat and the fitted values from this approach are _identical_
+    ## phi and the fitted values from this approach are _identical_
     ## (I expected approximately equal).
 
+    ## Feb 21 2012 - JP Florens said the starting point should be
+    ## E[E[Y|W]|Z], below we do E[Y|Z]... certainly works, could we
+    ## shorten the iterative process?
+
+    if(crs.messages) options(crs.messages=FALSE)
     phi.0 <- crs(formula.yz,opts=opts,data=traindata,...)
 
-    residuals.phihat <- traindata$y-phihat
-    traindata$y <- traindata$y - (fitted(phi.0)-phihat)
+    residuals.phi <- traindata$y-phi
+    traindata$y <- traindata$y - (fitted(phi.0)-phi)
 
     model <- crs(formula.yz,
                  cv="none",
@@ -358,9 +380,10 @@ crsiv <- function(y,
                  tau=phi.0$tau,
                  deriv=deriv,
                  data=traindata)
+    if(crs.messages) options(crs.messages=TRUE)    
 
-    model$residuals <- residuals.phihat
-    model$phihat <- phihat
+    model$residuals <- residuals.phi
+    model$phi <- phi
     model$alpha <- alpha
 
     return(model)
@@ -379,10 +402,12 @@ crsiv <- function(y,
     } else {
       console <- printPush(paste("Computing optimal smoothing and phi(z,x) for iteration 1...",sep=""),console)
     }
+    if(crs.messages) options(crs.messages=FALSE)
     phi.0 <- crs(formula.yz,opts=opts,data=traindata,...)
     model.residphi0 <- crs(formula.residphi0w,opts=opts,data=traindata,...)
     model.Eresidphi0.z <- crs(formula.predictmodelresidphi0z,opts=opts,data=traindata,...)
-    phi.j.m.1 <- predict(phi.0,newdata=evaldata) + predict(model.Eresidphi0.z,newdata=evaldata)
+    if(crs.messages) options(crs.messages=TRUE)    
+    phi.j.m.1 <- predict(phi.0,newdata=evaldata) + constant*predict(model.Eresidphi0.z,newdata=evaldata)
 
     ## For the stopping rule
 
@@ -391,11 +416,14 @@ crsiv <- function(y,
     console <- printPush(paste("Computing optimal smoothing for the stopping rule...",sep=""),console)
 
     norm.stop <- numeric()
+    if(crs.messages) options(crs.messages=FALSE)
     model.E.y.w <- crs(formula.yw,opts=opts,data=traindata,...)
     E.y.w <- predict(model.E.y.w,newdata=evaldata)
-    phihat <- phi.j.m.1
-    model.E.phi.w <- crs(formula.phihatw,opts=opts,data=traindata,...)
+    phi <- phi.j.m.1
+    model.E.phi.w <- crs(formula.phiw,opts=opts,data=traindata,...)
     E.phi.w <- predict(model.E.phi.w,newdata=evaldata)
+    if(crs.messages) options(crs.messages=TRUE)    
+
     norm.stop[1] <- mean(((E.y.w-E.phi.w)/E.y.w)^2)
 
     for(j in 2:iterate.max) {
@@ -408,10 +436,12 @@ crsiv <- function(y,
         console <- printPush(paste("Computing optimal smoothing and phi(z,x) for iteration ", j,"...",sep=""),console)
       }
 
+      if(crs.messages) options(crs.messages=FALSE)
       model.residw <- crs(formula.residw,opts=opts,data=traindata,...)
       model.predict.residw.z <- crs(formula.predictmodelresidwz,opts=opts,data=traindata,...)
+      if(crs.messages) options(crs.messages=TRUE)    
 
-      phihat <- phi.j.m.1 + constant*predict(model.predict.residw.z,newdata=evaldata)
+      phi <- phi.j.m.1 + constant*predict(model.predict.residw.z,newdata=evaldata)
 
       console <- printClear(console)
       console <- printPop(console)
@@ -419,7 +449,8 @@ crsiv <- function(y,
 
       ## For the stopping rule (use same smoothing as original,
       ## cv="none" so no ... args allowed hence pass all relevant args)
-      model.stop <- crs(formula.phihatw,
+      if(crs.messages) options(crs.messages=FALSE)
+      model.stop <- crs(formula.phiw,
                         cv="none",
                         degree=model.E.phi.w$degree,
                         segments=model.E.phi.w$segments,
@@ -430,39 +461,39 @@ crsiv <- function(y,
                         knots=model.E.phi.w$knots,
                         tau=model.E.phi.w$tau,                        
                         data=traindata)
+      if(crs.messages) options(crs.messages=TRUE)    
       
       E.phi.w <- predict(model.stop,newdata=evaldata)
       norm.stop[j] <- mean(((E.y.w-E.phi.w)/E.y.w)^2)
 
-      ## If we are below stopping tolerance then break
+      ## If stopping rule criterion increases or we are below stopping
+      ## tolerance then break
 
-      if((norm.stop[j-1]-norm.stop[j]) < iterate.tol) break()
-
-      ## If objective increases then break, but in this case phihat
-      ## ought to be phij.m.1
-
-      if(norm.stop[j] > norm.stop[j-1]) {
-        phihat <- phi.j.m.1
+      if(norm.stop[j] < iterate.tol) break()
+      if(norm.stop[j-1]-norm.stop[j] < iterate.diff.tol) break()
+      if(stop.on.increase && norm.stop[j] > norm.stop[j-1]) {
+        phi <- phi.j.m.1
         break()
       }
 
       ## For next iteration phi.j
 
-      phi.j.m.1 <- phihat
+      phi.j.m.1 <- phi
 
     }
 
     ## phi.0 is the conditional mean model. We compute lambda =
-    ## fitted(phi.0)-phihat then transform y via
+    ## fitted(phi.0)-phi then transform y via
     ## y.lambda=y-lambda. Here we overwrite y so that we can reuse the
     ## formula. Before that, save the proper residuals and then push
     ## these into the model. June 9 2011 - I am concerned because
-    ## phihat and the fitted values from this approach are _identical_
+    ## phi and the fitted values from this approach are _identical_
     ## (I expected approximately equal).
 
-    residuals.phihat <- traindata$y-phihat
-    traindata$y <- traindata$y - (fitted(phi.0)-phihat)
+    residuals.phi <- traindata$y-phi
+    traindata$y <- traindata$y - (fitted(phi.0)-phi)
 
+    if(crs.messages) options(crs.messages=FALSE)
     model <- crs(formula.yz,
                  cv="none",
                  degree=phi.0$degree,
@@ -475,9 +506,10 @@ crsiv <- function(y,
                  tau=phi.0$tau,                 
                  deriv=deriv,
                  data=traindata)
+    if(crs.messages) options(crs.messages=TRUE)    
 
-    model$residuals <- residuals.phihat
-    model$phihat <- phihat
+    model$residuals <- residuals.phi
+    model$phi <- phi
     model$num.iterations <- j
     model$norm.stop <- norm.stop
 
