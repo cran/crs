@@ -149,7 +149,7 @@ crsiv(y,
   derivative of the estimated \eqn{\varphi(Z,X)}{phi(Z,X)} and not that
   using \code{\link{crsivderiv}}, which instead uses the method of
   Florens and Racine (2012). Though both are statistically consistent,
-  practioners may desire one over the other hence we provide both.
+  practitioners may desire one over the other hence we provide both.
  }
 \details{
   Tikhonov regularization requires computation of weight matrices of
@@ -209,9 +209,10 @@ crsiv(y,
     See \code{\link{crs}} for details on the return object components.
 
     In addition to the standard \code{\link{crs}} components,
-    \code{crsiv} returns components \code{phi} and either
-    \code{alpha} when \code{method="Tikhonov"} or \code{num.iterations}
-    and \code{norm.stop} when \code{method="Landweber-Fridman"}.
+    \code{crsiv} returns components \code{phi} and either \code{alpha}
+    when \code{method="Tikhonov"} or \code{num.iterations},
+    \code{norm.stop} and \code{convergence} when
+    \code{method="Landweber-Fridman"}.
     
 }
   
@@ -227,9 +228,9 @@ crsiv(y,
   \dQuote{Nonparametric Instrumental Regression,} Econometrica, 79,
   1541-1565.
   
-  Feve, F. and J.P. Florens (2010), \dQuote{The practice of
-  non-parametric estimation by solving inverse problems: the example of
-  transformation models,} Econometrics Journal, 13, S1-S27.
+  Feve, F. and J.P. Florens (2010), \dQuote{The Practice of
+  Non-parametric Estimation by Solving Inverse Problems: The Example of
+  Transformation Models,} Econometrics Journal, 13, S1-S27.
 
   Florens, J.P. and J.S. Racine (2012), \dQuote{Nonparametric
   Instrumental Derivatives,} Working Paper.
@@ -239,10 +240,10 @@ crsiv(y,
   Math. Nauk., 11, 233-334, in Russian.
 
   Horowitz, J.L. (2011), \dQuote{Applied Nonparametric Instrumental
-  Variables Estimation,}, Econometrica, 79, 347-394.
+  Variables Estimation,} Econometrica, 79, 347-394.
   
-  Landweber, L. (1951), \dQuote{An iterative formula for Fredholm
-  integral equations of the first kind,} American Journal of
+  Landweber, L. (1951), \dQuote{An Iterative Formula for Fredholm
+  Integral Equations of the First Kind,} American Journal of
   Mathematics, 73, 615-24.
 
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
@@ -261,6 +262,7 @@ This function should be considered to be in `beta test' status until further not
 \code{\link[np]{npreg}}, \code{\link{crs}}
 }
 \examples{
+\dontrun{
 ## This illustration was made possible by Samuele Centorrino
 ## <samuele.centorrino@univ-tlse1.fr>
 
@@ -350,5 +352,6 @@ legend(quantile(z,trim),quantile(y,1-trim),
        lty=c(1,2,4),
        col=c("black","blue","red"),
        lwd=c(1,2,2))
+} % end dontrun       
 }
 \keyword{ instrument }

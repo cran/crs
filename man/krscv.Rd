@@ -27,7 +27,8 @@ krscv(xz,
       cv.func = c("cv.ls","cv.gcv","cv.aic"),
       degree = degree,
       segments = segments,
-      tau = NULL)
+      tau = NULL,
+      weights = NULL)
 }
 
 \arguments{
@@ -105,7 +106,14 @@ krscv(xz,
     regression spline is to be estimated rather than estimating the
     conditional mean (default \code{tau=NULL})
   }
-  
+
+  \item{weights}{
+    an optional vector of weights to be used in the fitting process.
+    Should be `NULL' or a numeric vector.  If non-NULL, weighted least
+    squares is used with weights `weights' (that is, minimizing
+    `sum(w*e^2)'); otherwise ordinary least squares is used.
+  }
+
 }
 
 \details{
@@ -168,12 +176,12 @@ krscv(xz,
 
 \references{
 
-  Craven, P. and G. Wahba (1979), \dQuote{Smoothing noisy data with
-  spline functions,} Numerische Mathematik, 13, 377-403.
+  Craven, P. and G. Wahba (1979), \dQuote{Smoothing Noisy Data With
+  Spline Functions,} Numerische Mathematik, 13, 377-403.
 
   Hurvich, C.M. and J.S. Simonoff and C.L. Tsai (1998),
-  \dQuote{Smoothing parameter selection in nonparametric regression
-    using an improved Akaike information criterion,} Journal of the
+  \dQuote{Smoothing Parameter Selection in Nonparametric Regression
+    Using an Improved Akaike Information Criterion,} Journal of the
   Royal Statistical Society B, 60, 271-293.
 
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:

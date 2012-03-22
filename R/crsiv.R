@@ -229,6 +229,11 @@ crsiv <- function(y,
     ## bandwidths, one for y on w and one for phi(z) on w (in the
     ## first step we use E(y|w) as a proxy for phi(z) and use
     ## bandwidths for y on w).
+
+    ## convergence flag returned for Landweber-Fridman, not Tikhonov,
+    ## but value is required
+
+    convergence <- NULL
     
     ## First we conduct the regression spline estimator of y on w
     
@@ -469,16 +474,24 @@ crsiv <- function(y,
       ## If stopping rule criterion increases or we are below stopping
       ## tolerance then break
 
-      if(norm.stop[j] < iterate.tol) break()
-      if(norm.stop[j-1]-norm.stop[j] < iterate.diff.tol) break()
+      if(norm.stop[j] < iterate.tol) {
+        convergence <- "ITERATE_TOL"
+        break()
+      }
       if(stop.on.increase && norm.stop[j] > norm.stop[j-1]) {
+        convergence <- "STOP_ON_INCREASE"
         phi <- phi.j.m.1
+        break()
+      }
+      if(abs(norm.stop[j-1]-norm.stop[j]) < iterate.diff.tol) {
+        convergence <- "ITERATE_DIFF_TOL"
         break()
       }
 
       ## For next iteration phi.j
 
       phi.j.m.1 <- phi
+      convergence <- "ITERATE_MAX"
 
     }
 
@@ -512,6 +525,7 @@ crsiv <- function(y,
     model$phi <- phi
     model$num.iterations <- j
     model$norm.stop <- norm.stop
+    model$convergence <- convergence
 
     console <- printClear(console)
     console <- printPop(console)
