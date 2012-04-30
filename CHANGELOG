@@ -1,3 +1,26 @@
+Changes from Version 0.15-15 to 0.15-16 [30-Apr-2012]
+
+* Fixed bug when deriv= is used in crs() (derivatives for categorical
+  variables were not correct in some cases - derivatives computed by
+  plot and plot-data were correct however)
+
+* Fixed issue when plot called with "plot-data" or "data" and
+  par(mfrow()) is not reset
+
+* Startup message points to the faq, faq is now a vignette
+
+* Glitch fixed in npglpreg() where kernel types were not being passed
+  to the NOMAD solver...
+
+* Added ckerorder option to npglpreg()
+
+* More information output by summary for npglpreg() objects (kernel
+  type, order etc.)
+
+* tol for determining ill-conditioned bases now consistent with
+  Octave/Matlab etc. and uses the tolerance
+  max(dim(x))*max(sqrt(abs(e)))*.Machine$double.eps
+
 Changes from Version 0.15-14 to 0.15-15 [16-Apr-2012]
 
 * NOTE: ** major change in default setting ** Default basis set to
@@ -17,9 +40,9 @@ Changes from Version 0.15-14 to 0.15-15 [16-Apr-2012]
   conditioned bases to creep into the final model (this may result in
   increased runtime for large datasets and multivariate tensor models)
 
-* Potential runtime improvement for large bases (test for ill
-  conditioned bases was still relying in parts on rcond(t(B)%*%B), now
-  using crossprod(B) which is more computationally efficient than
+* Potential runtime improvement for large bases (test for
+  ill-conditioned bases was still relying in parts on rcond(t(B)%*%B),
+  now using crossprod(B) which is more computationally efficient than
   rcond(t(B)%*%B) and has a substantially smaller memory footprint)
 
 * No longer report basis type for one continuous predictor as all

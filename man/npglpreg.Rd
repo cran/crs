@@ -23,6 +23,8 @@ npglpreg(\dots)
          bws = NULL,
          degree = NULL,
          leave.one.out = FALSE,
+         ckertype = c("gaussian", "epanechnikov","uniform"),
+         ckerorder = 2,
          ukertype = c("liracine", "aitchisonaitken"),
          okertype = c("liracine", "wangvanryzin"),
          bwtype = c("fixed", "generalized_nn", "adaptive_nn", "auto"),
@@ -43,6 +45,8 @@ npglpreg(\dots)
          bws = NULL,
          degree = NULL,
          leave.one.out = FALSE,
+         ckertype = c("gaussian", "epanechnikov","uniform"),
+         ckerorder = 2,
          ukertype = c("liracine", "aitchisonaitken"),
          okertype = c("liracine", "wangvanryzin"),
          bwtype = c("fixed", "generalized_nn", "adaptive_nn", "auto"),
@@ -111,6 +115,19 @@ for each dimension of the continuous \code{x} in \code{txdat}}
     a logical value to specify whether or not to compute the leave one
     out sums. Will not work if \code{exdat} is specified. Defaults to
     \code{FALSE}
+  }
+
+  \item{ckertype}{
+    character string used to specify the continuous kernel type.
+    Can be set as \code{gaussian}, \code{epanechnikov}, or
+    \code{uniform}. Defaults to \code{gaussian}.
+  }
+
+  \item{ckerorder}{
+    numeric value specifying kernel order (one of
+    \code{(2,4,6,8)}). Kernel order specified along with a
+    \code{uniform} continuous kernel type will be ignored. Defaults to
+    \code{2}.
   }
 
   \item{ukertype}{
