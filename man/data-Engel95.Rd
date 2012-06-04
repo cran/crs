@@ -39,6 +39,7 @@ total.
 \keyword{datasets}
 
 \examples{
+\dontrun{
 ## Example - we compute nonparametric instrumental regression of an
 ## Engel curve for food expenditure shares using Landweber-Fridman
 ## iteration of Fredholm integral equations of the first kind.
@@ -60,7 +61,7 @@ Engel95 <- Engel95[order(Engel95$logexp),]
 attach(Engel95)
 
 model.iv <- crsiv(y=food,z=logexp,w=logwages,method="Landweber-Fridman")
-phihat <- model.iv$phihat
+phihat <- model.iv$phi
 
 ## Compute the non-IV regression (i.e. regress y on z)
 
@@ -94,4 +95,5 @@ legend(quantile(logexp,trim),quantile(food,1-trim),
        lty=c(2,4),
        col=c("blue","red"),
        lwd=c(2,2))
+}
 }
