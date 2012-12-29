@@ -26,10 +26,11 @@ crsivderiv(y,
            weval = NULL,
            xeval = NULL,
            iterate.max = 1000,
-           iterate.tol = 1.0e-04,
            iterate.diff.tol = 1.0e-08,
            constant = 0.5,
-           start.phi.zero = FALSE,
+           penalize.iteration = TRUE,
+           start.from = c("Eyz","EEywz"),
+           starting.values = NULL,
            stop.on.increase = TRUE,
            smooth.residuals = TRUE,
            opts = list("MAX_BB_EVAL"=10000,
@@ -82,9 +83,6 @@ crsivderiv(y,
   an integer indicating the maximum number of iterations permitted
   before termination occurs when using Landweber-Fridman iteration
 }
-\item{iterate.tol}{
-  the search tolerance for the stopping rule when using Landweber-Fridman iteration
-}
 \item{iterate.diff.tol}{
   the search tolerance for the difference in the stopping rule from
   iteration to iteration when using Landweber-Fridman
@@ -93,11 +91,19 @@ crsivderiv(y,
 \item{constant}{
   the constant to use when using  Landweber-Fridman iteration
 }
-\item{start.phi.zero}{
-  a logical value indicating whether to commence Landweber-Fridman
-  assuming \eqn{\varphi_{-1}=0}{phi[-1]=0} (proper Landweber-Fridman) or
-  instead begin from \eqn{E(y|z)} (defaults to \code{FALSE}, see details
-  below)
+\item{penalize.iteration}{ a logical value indicating whether to
+    penalize the norm by the number of iterations or not (default
+    \code{TRUE})
+}    
+\item{start.from}{ a character string indicating whether to start from
+  \eqn{E(Y|z)} (default, \code{"Eyz"}) or from \eqn{E(E(Y|z)|z)} (this can
+  be overridden by providing \code{starting.values} below)
+}  
+\item{starting.values}{ a value indicating whether to commence
+  Landweber-Fridman assuming
+  \eqn{\varphi'_{-1}=starting.values}{phi'[-1]=starting.values} (proper
+  Landweber-Fridman) or instead begin from \eqn{E(y|z)} (defaults to
+  \code{NULL}, see details below)
 }
 \item{stop.on.increase}{
   a logical value (defaults to \code{TRUE}) indicating whether to halt
@@ -134,8 +140,8 @@ crsivderiv(y,
   when either the change in the value of
   \eqn{||(E(y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
   }{||(E(y|w)-E(phi(z,x)|w))/E(y|w)||^2 } from iteration to iteration is
-  less than \code{iterate.tol} or we hit \code{iterate.max} or
-  \eqn{||E((y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
+  less than \code{iterate.diff.tol} or we hit \code{iterate.max} or
+  \eqn{||(E(y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
   }{||(E(y|w)-E(phi(z,x)|w))/E(y|w)||^2 } stops falling in value and
   starts rising.
 
@@ -149,8 +155,9 @@ crsivderiv(y,
 }
 \value{
   
-    \code{crsivderiv} returns components \code{phi.prime}, \code{phi},
-    \code{num.iterations}, \code{norm.stop} and \code{convergence}.
+  \code{crsivderiv} returns components \code{phi.prime}, \code{phi},
+    \code{phi.prime.mat}, \code{num.iterations}, \code{norm.stop},
+    \code{norm.value} and \code{convergence}.
     
 }
   

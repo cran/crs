@@ -32,10 +32,14 @@ crsiv(y,
       alpha.min = 1e-10,
       alpha.max = 1e-01,
       alpha.tol = .Machine$double.eps^0.25,
+      deriv = 0,
       iterate.max = 1000,
-      iterate.tol = 1.0e-04,
       iterate.diff.tol = 1.0e-08,
       constant = 0.5,
+      penalize.iteration = TRUE,
+      smooth.residuals = TRUE,
+      start.from = c("Eyz","EEywz"),
+      starting.values = NULL,
       stop.on.increase = TRUE,
       method = c("Landweber-Fridman","Tikhonov"),
       opts = list("MAX_BB_EVAL"=10000,
@@ -44,7 +48,6 @@ crsiv(y,
                   "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
                   "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
                   "DISPLAY_DEGREE"=0),
-      deriv = 0,
       ...)
 }
 
@@ -106,9 +109,6 @@ crsiv(y,
   an integer indicating the maximum number of iterations permitted
   before termination occurs when using \code{method="Landweber-Fridman"}
 }
-\item{iterate.tol}{
-  the search tolerance for the stopping rule when using \code{method="Landweber-Fridman"}
-}
 \item{iterate.diff.tol}{
   the search tolerance for the difference in the stopping rule from
   iteration to iteration when using \code{method="Landweber-Fridman"}
@@ -117,17 +117,37 @@ crsiv(y,
 \item{constant}{
   the constant to use when using  \code{method="Landweber-Fridman"}
 }
+\item{method}{
+  the regularization method employed (default
+   \code{"Landweber-Fridman"}, see Horowitz (2011); see Darolles, Fan,
+   Florens and Renault (2011) for details for \code{"Tikhonov"})
+ }
+\item{penalize.iteration}{ a logical value indicating whether to
+    penalize the norm by the number of iterations or not (default
+    \code{TRUE})
+}    
+\item{smooth.residuals}{
+  a logical value (defaults to \code{TRUE}) indicating whether to
+  optimize bandwidths for the regression of \eqn{y-\varphi(z)}{y-phi(z)}
+  on \eqn{w} or for the regression of \eqn{\varphi(z)}{phi(z)} on
+  \eqn{w} during iteration
+}
+\item{start.from}{ a character string indicating whether to start from
+  \eqn{E(Y|z)} (default, \code{"Eyz"}) or from \eqn{E(E(Y|z)|z)} (this can
+  be overridden by providing \code{starting.values} below)
+}  
+\item{starting.values}{ a value indicating whether to commence
+  Landweber-Fridman assuming
+  \eqn{\varphi_{-1}=starting.values}{phi[-1]=starting.values} (proper
+  Landweber-Fridman) or instead begin from \eqn{E(y|z)} (defaults to
+  \code{NULL}, see details below)
+}
 \item{stop.on.increase}{
   a logical value (defaults to \code{TRUE}) indicating whether to halt
   iteration if the stopping criterion (see below) increases over the
   course of one iteration (i.e. it may be above the iteration tolerance
   but increased)
 }
-\item{method}{
-  the regularization method employed (default
-   \code{"Landweber-Fridman"}, see Horowitz (2011); see Darolles, Fan,
-   Florens and Renault (2011) for details for \code{"Tikhonov"})
- }
   \item{opts}{
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
     further details)
@@ -176,8 +196,8 @@ crsiv(y,
   when either the change in the value of
   \eqn{||(E(y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
   }{||(E(y|w)-E(phi(z,x)|w))/E(y|w)||^2 } from iteration to iteration is
-  less than \code{iterate.tol} or we hit \code{iterate.max} or
-  \eqn{||E((y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
+  less than \code{iterate.diff.tol} or we hit \code{iterate.max} or
+  \eqn{||(E(y|w)-E(\varphi_k(z,x)|w))/E(y|w)||^2
   }{||(E(y|w)-E(phi(z,x)|w))/E(y|w)||^2 } stops falling in value and
   starts rising.
 
@@ -210,9 +230,9 @@ crsiv(y,
 
     In addition to the standard \code{\link{crs}} components,
     \code{crsiv} returns components \code{phi} and either \code{alpha}
-    when \code{method="Tikhonov"} or \code{num.iterations},
-    \code{norm.stop} and \code{convergence} when
-    \code{method="Landweber-Fridman"}.
+    when \code{method="Tikhonov"} or \code{phi}, \code{phi.mat},
+    \code{num.iterations}, \code{norm.stop}, \code{norm.value} and
+    \code{convergence} when \code{method="Landweber-Fridman"}.
     
 }
   

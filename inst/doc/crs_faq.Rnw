@@ -440,6 +440,8 @@ to detect a minimum it can fail here if the objective function is
 When this occurs you can either increase \verb+nmulti+ and/or decrease
 \verb+degree.max+ and restart the search.
 
+Alternatively, you might try \verb+singular.ok=TRUE+.
+
 Note also that as of version 0.15-1, the initial search values will be
 degree one and segment one (i.e.\ a linear model) unless you provide
 the vectors \verb+degree=c(...)+ and \verb+segments=c(...)+ which will
@@ -596,6 +598,24 @@ x.lag.1 <- lag.numeric(x,1)
 \clearpage
 
 \appendix
+
+
+
+\section*{Changes from Version 0.15-17 to 0.15-18 [Dec 29 2012]}
+
+\begin{itemize}
+
+\item Using .onUnload rather than .Last.lib in zzz.R
+
+\item Stopping rules for crsiv and crsivderiv modified
+
+\item Added options to smooth residuals for stopping rule in crsiv
+  (i.e. smooth y-phi(z)~w as opposed to separately smoothing y~w and
+  phi(z)~w)
+
+\item Added options to input starting values for crsiv and crsivderiv
+
+\end{itemize}
 
 \section*{Changes from Version 0.15-16 to 0.15-17 [04-Jun-2012]}
 
