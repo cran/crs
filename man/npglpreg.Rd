@@ -7,7 +7,7 @@
 \description{
   
   \code{npglpreg} computes a generalized local polynomial kernel
-    regression estimate (Hall and Racine (2011)) of a one (1)
+    regression estimate (Hall and Racine (forthcoming)) of a one (1)
     dimensional dependent variable on an \code{r}-dimensional vector of
     continuous and categorical
     (\code{\link{factor}}/\code{\link{ordered}}) predictors.
@@ -23,7 +23,7 @@ npglpreg(\dots)
          bws = NULL,
          degree = NULL,
          leave.one.out = FALSE,
-         ckertype = c("gaussian", "epanechnikov","uniform"),
+         ckertype = c("gaussian", "epanechnikov","uniform","truncated gaussian"),
          ckerorder = 2,
          ukertype = c("liracine", "aitchisonaitken"),
          okertype = c("liracine", "wangvanryzin"),
@@ -45,24 +45,28 @@ npglpreg(\dots)
          bws = NULL,
          degree = NULL,
          leave.one.out = FALSE,
-         ckertype = c("gaussian", "epanechnikov","uniform"),
+         ckertype = c("gaussian", "epanechnikov","uniform","truncated gaussian"),
          ckerorder = 2,
          ukertype = c("liracine", "aitchisonaitken"),
          okertype = c("liracine", "wangvanryzin"),
          bwtype = c("fixed", "generalized_nn", "adaptive_nn", "auto"),
          cv = c("degree-bandwidth", "bandwidth", "none"),
          cv.func = c("cv.ls", "cv.gcv", "cv.aic"),
-         opts=list("MAX_BB_EVAL"=10000,
-                   "EPSILON"=.Machine$double.eps,
-                   "INITIAL_MESH_SIZE"=paste("r",1.0e-04,sep=""),
-                   "MIN_MESH_SIZE"=paste("r",1.0e-05,sep=""),
-                   "MIN_POLL_SIZE"=paste("r",1.0e-05,sep="")),
          nmulti = 5,
          random.seed = 42,
          degree.max = 10,
          degree.min = 0,
-         bandwidth.max = 1.0e+03,
-         bandwidth.min = 1.0e-02,
+         bandwidth.max = .Machine$double.xmax,
+         bandwidth.min = sqrt(.Machine$double.eps),
+         bandwidth.min.numeric = 1.0e-02,
+         bandwidth.switch = 1.0e+06,
+         max.bb.eval = 10000,
+         initial.mesh.size.real = "1",
+         initial.mesh.size.integer = "1",
+         min.mesh.size.real = "1.0e-05",
+         min.mesh.size.integer = "1.0e-05",
+         min.poll.size.real = "1.0e-08",
+         min.poll.size.integer = "1.0e-08",
          gradient.vec = NULL,
          gradient.categorical = FALSE,
          cv.shrink = TRUE,
@@ -164,10 +168,42 @@ for each dimension of the continuous \code{x} in \code{txdat}}
     Kullback-Leibler cross-validation (Hurvich, Simonoff, and Tsai
     (1998)), and \code{cv.ls} specifies least-squares
     cross-validation }
-  \item{opts}{
+
+  \item{max.bb.eval}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{initial.mesh.size.real}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{initial.mesh.size.integer}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.mesh.size.real}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.mesh.size.integer}{
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
     further details)
   }
+
+  \item{min.poll.size.real}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.poll.size.integer}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }      
+
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
@@ -184,22 +220,30 @@ for each dimension of the continuous \code{x} in \code{txdat}}
     each of the continuous predictors (default \code{degree.min=0})}
   
     \item{bandwidth.max}{ the maximum bandwidth scale (i.e. number of
-    standard deviations) for each of the continuous predictors (default
-    \code{bandwidth.max=1.0e+03} standard deviations)}
-  
-  \item{bandwidth.min}{ the minimum bandwidth scale (i.e. number of
     scaled standard deviations) for each of the continuous predictors
-    (default \code{bandwidth.min=1.0e-02} scaled standard deviations)}
+    (default \code{bandwidth.max=.Machine$double.xmax})}
   
-\item{gradient.vec}{
-  a vector corresponding to the order of the partial (or cross-partial)
-  and which variable the partial (or cross-partial) derivative(s) are required
-}
-\item{gradient.categorical}{
-  a logical value indicating whether discrete gradients
-  (i.e. differences in the response from the base value for each
-  categorical predictor) are to be computed
-}
+  \item{bandwidth.min}{ the minimum bandwidth scale for each of the
+    categorical predictors (default \code{sqrt(.Machine$double.eps)})}
+
+  \item{bandwidth.min.numeric}{ the minimum bandwidth scale (i.e. number
+    of scaled standard deviations) for each of the continuous predictors
+    (default \code{bandwidth.min=1.0e-02})}
+
+  \item{bandwidth.switch}{ the minimum bandwidth scale (i.e. number of
+    scaled standard deviations) for each of the continuous predictors
+    (default \code{bandwidth.switch=1.0e+05}) before the local polynomial
+    is treated as global during cross-validation at which point a global
+    categorical kernel weighted least squares fit is used for
+    computational efficiency}
+  
+  \item{gradient.vec}{ a vector corresponding to the order of the
+    partial (or cross-partial) and which variable the partial (or
+    cross-partial) derivative(s) are required }
+
+  \item{gradient.categorical}{ a logical value indicating whether
+  discrete gradients (i.e. differences in the response from the base
+  value for each categorical predictor) are to be computed }
 
 \item{cv.shrink}{ a logical value indicating whether to use ridging
   (Seifert and Gasser (2000)) for ill-conditioned inversion during
@@ -214,8 +258,7 @@ for each dimension of the continuous \code{x} in \code{txdat}}
 \item{Bernstein}{ a logical value indicating whether to use raw
   polynomials or Bernstein polynomials (default) (note that a Bernstein
   polynomial is also know as a Bezier curve which is also a
-  B-spline with no interior knots)
-}
+  B-spline with no interior knots)}
 
 \item{mpi}{ a logical value (default \code{mpi=FALSE}) that, when
   \code{mpi=TRUE}, can call the \code{npRmpi} rather than the \code{np}
@@ -224,7 +267,7 @@ for each dimension of the continuous \code{x} in \code{txdat}}
   \code{crs} package, and need \code{.Rprofile} in your current
   directory)}
 
-\item{\dots}{
+  \item{\dots}{
     additional arguments supplied to specify the regression type,
     bandwidth type, kernel types, training data, and so on, detailed
     below
@@ -274,24 +317,6 @@ for each dimension of the continuous \code{x} in \code{txdat}}
   Eventually it will be rolled into the np/npRmpi packages after the
   final status of snomadr/NOMAD gets sorted out.
 
-  Note that setting \code{opts}, \code{bandwidth.max}, and
-  \code{bandwidth.min} to the following will result in more refined
-  optimization of the objective function than the default though at the
-  cost of longer optimization times.
-
-  \preformatted{
-
-    opts <- list("MAX_BB_EVAL"=10000,
-                 "EPSILON"=.Machine$double.eps,
-                 "INITIAL_MESH_SIZE"=paste("r",1.0e-08,sep=""),
-                 "MIN_MESH_SIZE"=paste("r",1.0e-12,sep=""),
-                 "MIN_POLL_SIZE"=paste("r",1.0e-12,sep=""))
-             
-    bandwidth.max <- 1.0e+04
-    bandwidth.min <- 1.0e-03
-    
-  }
-  
 }
 \value{
   
@@ -347,8 +372,8 @@ for each dimension of the continuous \code{x} in \code{txdat}}
   Global Functionals and a Measure of the Explanatory Power of
   Covariates in Regression,} The Annals of Statistics, 23 1443-1473.
 
-  Hall, P. and J.S. Racine (2011), \dQuote{Cross-Validated
-  Generalized Local Polynomial Regression,} Manuscript.
+  Hall, P. and J.S. Racine (forthcoming), \dQuote{Cross-Validated
+  Generalized Local Polynomial Regression,} Journal of Econometrics.
 
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
   Theory and Practice,} Princeton University Press.

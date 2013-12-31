@@ -8,22 +8,10 @@
 ## different form purely for computational simplicity. Both approaches
 ## are identical though.
 
-NZD <- function(a) {
-  sapply(1:NROW(a), function(i) {if(a[i] < 0) min(-.Machine$double.xmin,a[i]) else max(.Machine$double.xmin,a[i])})
-}
-
 sd.robust <- function(x) {
-  if(is.matrix(x)) stop(" sd.robust is to be used with vectors only")
-  iqr.x <- IQR(x)
-  sd.x <- sd(x)
-  if(isTRUE(all.equal(sd.x, 0))) stop(" numeric predictor is a constant not a variable")
-  ## Test for pathological case where sd > 0 but iqr is 0 (many
-  ## repeated values)
-  if(sd.x > 0 && isTRUE(all.equal(iqr.x, 0))) {
-    iqr.x <- sd.x
-    warning(" numeric predictor exists with numerous repeated values (over 50%, IQR = 0)")
-  }
-  min(sd.x,iqr.x/1.34898)
+  sd.vec <- apply(as.matrix(x),2,sd)
+  IQR.vec <- apply(as.matrix(x),2,IQR)/(qnorm(.25,lower.tail=F)*2)
+  return(ifelse(sd.vec<IQR.vec|IQR.vec==0,sd.vec,IQR.vec))
 }
 
 mypoly <- function(x,
@@ -98,6 +86,7 @@ W.glp <- function(xdat = NULL,
   xdat.col.numeric <- sapply(1:ncol(xdat),function(i){is.numeric(xdat[,i])})
   k <- ncol(as.data.frame(xdat[,xdat.col.numeric]))
 
+  xdat.numeric <- NULL
   if(k > 0) {
     xdat.numeric <- as.data.frame(xdat[,xdat.col.numeric])
     if(!is.null(exdat)) {
@@ -184,8 +173,12 @@ W.glp <- function(xdat = NULL,
     colnames(res) <- apply(z, 1L, function(x) paste(x, collapse = "."))
     if(gradient.compute) colnames(res.deriv) <- apply(z, 1L, function(x) paste(x, collapse = "."))
 
-    if(gradient.compute) res[,!is.na(as.numeric(res.deriv))] <- 0
-    return(cbind(1,res))
+    if(gradient.compute) {
+      res[,!is.na(as.numeric(res.deriv))] <- 0
+      return(cbind(0,res))
+    } else {
+      return(cbind(1,res))
+    }
 
   }
 
@@ -290,7 +283,7 @@ npglpreg.default <- function(tydat=NULL,
                              bws=NULL,
                              degree=NULL,
                              leave.one.out=FALSE,
-                             ckertype=c("gaussian", "epanechnikov","uniform"),
+                             ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                              ckerorder=2,
                              ukertype=c("liracine","aitchisonaitken"),
                              okertype=c("liracine","wangvanryzin"),
@@ -548,8 +541,6 @@ predict.npglpreg <- function(object,
 
     ## Return the predicted values.
 
-    ## Nov 22 XXX - do we need to feed cv.shrink and cv.warning here???
-
     est <- npglpreg.default(tydat=tydat,
                             txdat=txdat,
                             exdat=exdat,
@@ -579,6 +570,17 @@ predict.npglpreg <- function(object,
 
 }
 
+## Note that to exploit NOMAD and scaling this function and the
+## functions it calls operate on the scaling factors and not the raw
+## bandwidths to avoid issues of scale associated with variable
+## measurement. In effect we need to put the parameters on which NOMAD
+## operates on the same `scale'. I achieve this by letting the
+## bandwidth scale factors lie in bandwidth.min to bandwidth.max then
+## rescale by this factor. This is the computational breakthrough I
+## have been missing and it took many frustrating days but would not
+## have occurred without some inspiration. But so far it is working
+## brilliantly and much better than before. All other functions
+## operate as one would expect.
 
 npglpreg.formula <- function(formula,
                              data=list(),
@@ -589,24 +591,28 @@ npglpreg.formula <- function(formula,
                              bws=NULL,
                              degree=NULL,
                              leave.one.out=FALSE,
-                             ckertype=c("gaussian", "epanechnikov","uniform"),
+                             ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                              ckerorder=2,
                              ukertype=c("liracine","aitchisonaitken"),
                              okertype=c("liracine","wangvanryzin"),
                              bwtype = c("fixed","generalized_nn","adaptive_nn","auto"),
                              cv=c("degree-bandwidth","bandwidth","none"),
                              cv.func=c("cv.ls","cv.gcv","cv.aic"),
-                             opts=list("MAX_BB_EVAL"=10000,
-                               "EPSILON"=.Machine$double.eps,
-                               "INITIAL_MESH_SIZE"=paste("r",1.0e-04,sep=""),
-                               "MIN_MESH_SIZE"=paste("r",1.0e-05,sep=""),
-                               "MIN_POLL_SIZE"=paste("r",1.0e-05,sep="")),
                              nmulti=5,
                              random.seed=42,
                              degree.max=10,
                              degree.min=0,
-                             bandwidth.max=1.0e+03,
-                             bandwidth.min=1.0e-02,
+                             bandwidth.max=.Machine$double.xmax,
+                             bandwidth.min=sqrt(.Machine$double.eps),
+                             bandwidth.min.numeric=1.0e-02,
+                             bandwidth.switch=1.0e+06,
+                             max.bb.eval=10000,
+                             initial.mesh.size.real="1",
+                             initial.mesh.size.integer="1",
+                             min.mesh.size.real="1.0e-05",
+                             min.mesh.size.integer="1.0e-05",
+                             min.poll.size.real="1.0e-08",
+                             min.poll.size.integer="1.0e-08",
                              gradient.vec=NULL,
                              gradient.categorical=FALSE,
                              cv.shrink=TRUE,
@@ -655,7 +661,6 @@ npglpreg.formula <- function(formula,
     if(bwtype!="auto") {
       ptm <- ptm + system.time(model.cv <-glpcvNOMAD(ydat=tydat,
                                                      xdat=txdat,
-                                                     opts=opts,
                                                      cv=cv,
                                                      degree=degree,
                                                      bandwidth=bws,
@@ -671,6 +676,15 @@ npglpreg.formula <- function(formula,
                                                      degree.min=degree.min,
                                                      bandwidth.max=bandwidth.max,
                                                      bandwidth.min=bandwidth.min,
+                                                     bandwidth.min.numeric=bandwidth.min.numeric,
+                                                     bandwidth.switch=bandwidth.switch,
+                                                     max.bb.eval=max.bb.eval,
+                                                     initial.mesh.size.real=initial.mesh.size.real,
+                                                     initial.mesh.size.integer=initial.mesh.size.integer,
+                                                     min.mesh.size.real=min.mesh.size.real,
+                                                     min.mesh.size.integer=min.mesh.size.integer,
+                                                     min.poll.size.real=min.poll.size.real,
+                                                     min.poll.size.integer=min.poll.size.integer,
                                                      cv.shrink=cv.shrink,
                                                      cv.warning=cv.warning,
                                                      Bernstein=Bernstein,
@@ -679,7 +693,6 @@ npglpreg.formula <- function(formula,
     } else {
       ptm <- ptm + system.time(model.cv <-glpcvNOMAD(ydat=tydat,
                                                      xdat=txdat,
-                                                     opts=opts,
                                                      cv=cv,
                                                      degree=degree,
                                                      bandwidth=bws,
@@ -695,6 +708,15 @@ npglpreg.formula <- function(formula,
                                                      degree.min=degree.min,
                                                      bandwidth.max=bandwidth.max,
                                                      bandwidth.min=bandwidth.min,
+                                                     bandwidth.min.numeric=bandwidth.min.numeric,
+                                                     bandwidth.switch=bandwidth.switch,
+                                                     max.bb.eval=max.bb.eval,
+                                                     initial.mesh.size.real=initial.mesh.size.real,
+                                                     initial.mesh.size.integer=initial.mesh.size.integer,
+                                                     min.mesh.size.real=min.mesh.size.real,
+                                                     min.mesh.size.integer=min.mesh.size.integer,
+                                                     min.poll.size.real=min.poll.size.real,
+                                                     min.poll.size.integer=min.poll.size.integer,
                                                      cv.shrink=cv.shrink,
                                                      cv.warning=cv.warning,
                                                      Bernstein=Bernstein,
@@ -706,7 +728,6 @@ npglpreg.formula <- function(formula,
 
       ptm <- ptm + system.time(model <-glpcvNOMAD(ydat=tydat,
                                                   xdat=txdat,
-                                                  opts=opts,
                                                   cv=cv,
                                                   degree=degree,
                                                   bandwidth=bws,
@@ -722,6 +743,15 @@ npglpreg.formula <- function(formula,
                                                   degree.min=degree.min,
                                                   bandwidth.max=bandwidth.max,
                                                   bandwidth.min=bandwidth.min,
+                                                  bandwidth.min.numeric=bandwidth.min.numeric,
+                                                  bandwidth.switch=bandwidth.switch,
+                                                  max.bb.eval=max.bb.eval,
+                                                  initial.mesh.size.real=initial.mesh.size.real,
+                                                  initial.mesh.size.integer=initial.mesh.size.integer,
+                                                  min.mesh.size.real=min.mesh.size.real,
+                                                  min.mesh.size.integer=min.mesh.size.integer,
+                                                  min.poll.size.real=min.poll.size.real,
+                                                  min.poll.size.integer=min.poll.size.integer,
                                                   cv.shrink=cv.shrink,
                                                   cv.warning=cv.warning,
                                                   Bernstein=Bernstein,
@@ -735,7 +765,6 @@ npglpreg.formula <- function(formula,
 
       ptm <- ptm + system.time(model <-glpcvNOMAD(ydat=tydat,
                                                   xdat=txdat,
-                                                  opts=opts,
                                                   cv=cv,
                                                   degree=degree,
                                                   bandwidth=bws,
@@ -751,6 +780,15 @@ npglpreg.formula <- function(formula,
                                                   degree.min=degree.min,
                                                   bandwidth.max=bandwidth.max,
                                                   bandwidth.min=bandwidth.min,
+                                                  bandwidth.min.numeric=bandwidth.min.numeric,
+                                                  bandwidth.switch=bandwidth.switch,
+                                                  max.bb.eval=max.bb.eval,
+                                                  initial.mesh.size.real=initial.mesh.size.real,
+                                                  initial.mesh.size.integer=initial.mesh.size.integer,
+                                                  min.mesh.size.real=min.mesh.size.real,
+                                                  min.mesh.size.integer=min.mesh.size.integer,
+                                                  min.poll.size.real=min.poll.size.real,
+                                                  min.poll.size.integer=min.poll.size.integer,
                                                   cv.shrink=cv.shrink,
                                                   cv.warning=cv.warning,
                                                   Bernstein=Bernstein,
@@ -819,7 +857,7 @@ glpregEst <- function(tydat=NULL,
                       bws=NULL,
                       degree=NULL,
                       leave.one.out=FALSE,
-                      ckertype=c("gaussian", "epanechnikov","uniform"),
+                      ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                       ckerorder=2,
                       ukertype=c("liracine","aitchisonaitken"),
                       okertype=c("liracine","wangvanryzin"),
@@ -1129,7 +1167,7 @@ minimand.cv.ls <- function(bws=NULL,
                            xdat=NULL,
                            degree=NULL,
                            W=NULL,
-                           ckertype=c("gaussian", "epanechnikov","uniform"),
+                           ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                            ckerorder=2,
                            ukertype=c("liracine","aitchisonaitken"),
                            okertype=c("liracine","wangvanryzin"),
@@ -1156,6 +1194,10 @@ minimand.cv.ls <- function(bws=NULL,
 
   maxPenalty <- sqrt(.Machine$double.xmax)
 
+  console <- newLineConsole()
+  console <- printClear(console)
+  console <- printPop(console)
+
   if(!is.null(W)) {
     ## Check for positive degrees of freedom
     if(ncol(W) >= nrow(W)-1) {
@@ -1168,10 +1210,6 @@ minimand.cv.ls <- function(bws=NULL,
       return(maxPenalty)
     }
   }
-
-  console <- newLineConsole()
-  console <- printClear(console)
-  console <- printPop(console)
 
   if(any(bws<=0)) {
 
@@ -1189,6 +1227,7 @@ minimand.cv.ls <- function(bws=NULL,
                     bws = bws,
                     leave.one.out = TRUE,
                     bandwidth.divide = TRUE,
+                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1213,7 +1252,6 @@ minimand.cv.ls <- function(bws=NULL,
 
     } else {
 
-
       ## Generalized local polynomial via smooth coefficient
       ## formulation and one call to npksum
 
@@ -1223,6 +1261,7 @@ minimand.cv.ls <- function(bws=NULL,
                     bws = bws,
                     leave.one.out = TRUE,
                     bandwidth.divide = TRUE,
+                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1299,7 +1338,7 @@ minimand.cv.aic <- function(bws=NULL,
                             xdat=NULL,
                             degree=NULL,
                             W=NULL,
-                            ckertype=c("gaussian", "epanechnikov","uniform"),
+                            ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                             ckerorder=2,
                             ukertype=c("liracine","aitchisonaitken"),
                             okertype=c("liracine","wangvanryzin"),
@@ -1356,6 +1395,7 @@ minimand.cv.aic <- function(bws=NULL,
                             tydat = 1,
                             bws = bws,
                             bandwidth.divide = TRUE,
+                            bwscaling = TRUE,
                             ckertype = ckertype,
                             ckerorder=ckerorder,
                             ukertype = ukertype,
@@ -1372,6 +1412,7 @@ minimand.cv.aic <- function(bws=NULL,
                     tydat = rep(1,n),
                     bws = bws,
                     bandwidth.divide = TRUE,
+                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1403,6 +1444,7 @@ minimand.cv.aic <- function(bws=NULL,
                     weights = W,
                     bws = bws,
                     bandwidth.divide = TRUE,
+                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1482,7 +1524,7 @@ glpcv <- function(ydat=NULL,
                   xdat=NULL,
                   degree=NULL,
                   bwmethod=c("cv.ls","cv.aic"),
-                  ckertype=c("gaussian", "epanechnikov","uniform"),
+                  ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                   ckerorder=2,
                   ukertype=c("liracine","aitchisonaitken"),
                   okertype=c("liracine","wangvanryzin"),
@@ -1749,12 +1791,29 @@ glpcv <- function(ydat=NULL,
 
 }
 
+## 03/24/2013: Note that for the function below which uses NOMAD for
+## optimization we cross-validate on scale factors throughout
+## (i.e. bandwidths for continuous predictors are scaled according to
+## length(ydat)^{-1/(num.numeric+2*ckerorder)} while those for
+## categorical are scaled by
+## length(ydat)^{-2/(num.numeric+2*ckerorder)}. We adjust the upper
+## bounds for the categorical variables accordingly (i.e. 1 and
+## (c-1)/c). This is done so that the grid search takes place on a
+## _somewhat_ common scale and also allows us to sidestep the issue
+## with upper bounds where we were previously using relative tolerance
+## (I am grateful for Sebastien Le Digabel for providing hints that
+## allowed me to overcome this issue). This appears to resolve a
+## longstanding issue caused by the use of relative tolerance and
+## bounds and appears to put npglpreg() on equal footing with npreg()
+## in the np package. But npglpreg() may in fact scale better with n
+## while it admits generalized polynomials that npreg() lacks.
+
 glpcvNOMAD <- function(ydat=NULL,
                        xdat=NULL,
                        degree=NULL,
                        bandwidth=NULL,
                        bwmethod=c("cv.ls","cv.aic"),
-                       ckertype=c("gaussian", "epanechnikov","uniform"),
+                       ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
                        ckerorder=2,
                        ukertype=c("liracine","aitchisonaitken"),
                        okertype=c("liracine","wangvanryzin"),
@@ -1764,13 +1823,17 @@ glpcvNOMAD <- function(ydat=NULL,
                        random.seed=42,
                        degree.max=10,
                        degree.min=0,
-                       bandwidth.max=1.0e+03,
-                       bandwidth.min=1.0e-02,
-                       opts=list("MAX_BB_EVAL"=10000,
-                         "EPSILON"=.Machine$double.eps,
-                         "INITIAL_MESH_SIZE"=paste("r",1.0e-04,sep=""),
-                         "MIN_MESH_SIZE"=paste("r",1.0e-05,sep=""),
-                         "MIN_POLL_SIZE"=paste("r",1.0e-05,sep="")),
+                       bandwidth.max=.Machine$double.xmax,
+                       bandwidth.min=sqrt(.Machine$double.eps),
+                       bandwidth.min.numeric=1.0e-02,
+                       bandwidth.switch=1.0e+06,
+                       max.bb.eval=10000,
+                       initial.mesh.size.real="1",
+                       initial.mesh.size.integer="1",
+                       min.mesh.size.real="1.0e-05",
+                       min.mesh.size.integer="1.0e-05",
+                       min.poll.size.real="1.0e-08",
+                       min.poll.size.integer="1.0e-08",
                        cv.shrink=TRUE,
                        cv.warning=FALSE,
                        Bernstein=TRUE,
@@ -1834,7 +1897,7 @@ glpcvNOMAD <- function(ydat=NULL,
   if(is.null(nmulti)) nmulti <- min(5,num.bw)
 
   ## Determine which predictors are categorical and which are
-  ## discrete... we care about unordered categorical kernels if the
+  ## numeric... we care about unordered categorical kernels if the
   ## Aitchison & Aitken kernel is used since its bandwidth bounds are
   ## [0,(c-1)/c] and not 0/1 as are the rest of the unordered and
   ## ordered kernel bandwidth bounds.
@@ -1858,54 +1921,101 @@ glpcvNOMAD <- function(ydat=NULL,
     ub <- c(rep(bandwidth.max, num.bw))
   }
 
+  ## This is to provide flexibility wrt ridging... very small
+  ## bandwidths will wreak havoc on local polynomial regression. But
+  ## sensible lower bounds exist. They could be data-driven (minimum
+  ## unique distance between observations, say) or not. Regardless,
+  ## using the default for both categorical and numeric bandwidths is
+  ## likely not sensible.
+  
+  if(!is.null(bandwidth.min.numeric)) {
+    for(i in 1:num.numeric) {
+      lb[numeric.index[i]] <- bandwidth.min.numeric
+    }
+  }
+  ## The input `bandwidth.switch' is the number of (scaled) standard
+  ## deviations that will trigger the move to the global categorical
+  ## kernel weighted polynomial fit for numeric predictors (now that
+  ## we are using absolute initial meshes the upper bound for search
+  ## is .Machine$double.xmax and the algorithm will step quickly into
+  ## this region so this ought to assure k(0) holds). ub will be used
+  ## for the categorical predictors. This helps speed up kd-guided
+  ## search in the presence of large bandwidths (which otherwise would
+  ## descend to the root of the tree).
+
+  bw.switch <- c(rep(bandwidth.switch*length(ydat)^{1/(num.numeric+2*ckerorder)}, num.bw))
+
   if(bwtype!="fixed" && num.numeric > 0) {
     for(i in 1:num.numeric) {
       k.max <- knn.max(xdat[,numeric.index[i]])
       if(ub[numeric.index[i]] > k.max) ub[numeric.index[i]] <- k.max
+      if(bw.switch[numeric.index[i]] > k.max) bw.switch[numeric.index[i]] <- k.max      
     }
   }
 
-  ## Scale lb appropriately by n, don't want this for ub.
+  ## Set parameters for NOMAD per variables, and the upper bounds,
+  ## `trigger' for switching etc.
 
-  if(bwtype=="fixed" && num.numeric > 0) {
-    for(i in 1:num.numeric) {
-      sd.xdat <- sd.robust(xdat[,numeric.index[i]])
-      lb[numeric.index[i]] <- lb[numeric.index[i]]*sd.xdat*length(ydat)^{-1/(num.numeric+4)}
-      ub[numeric.index[i]] <- ub[numeric.index[i]]*sd.xdat
-    }
-  }
+  INITIAL.MESH.SIZE <- list()
+  MIN.MESH.SIZE <- list()
+  MIN.POLL.SIZE <- list()  
 
   for(i in 1:num.bw) {
+    INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.real
+    MIN.MESH.SIZE[[i]] <- min.mesh.size.real
+    MIN.POLL.SIZE[[i]] <- min.poll.size.real        
     ## Need to do integer search for numeric predictors when bwtype is
     ## a nearest-neighbour, so set bbin appropriately.
     if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
       bbin[i] <- 1
     }
-    if(xdat.numeric[i]!=TRUE) {
-      lb[i] <- 0.0
-      ub[i] <- 1.0
+    if(!xdat.numeric[i]) {
+      ub[i] <- 1.0*length(ydat)^{2/(num.numeric+2*ckerorder)}
+      bw.switch[i] <- ub[i]
+      INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.integer      
+      MIN.MESH.SIZE[[i]] <- min.mesh.size.integer
+      MIN.POLL.SIZE[[i]] <- min.poll.size.integer     
     }
     ## Check for unordered and Aitchison/Aitken kernel
     if(xdat.unordered[i]==TRUE && ukertype=="aitchisonaitken") {
       c.num <- length(unique(xdat[,i]))
-      ub[i] <- (c.num-1)/c.num
+      ub[i] <- (c.num-1)/c.num*length(ydat)^{2/(num.numeric+2*ckerorder)}
+      bw.switch[i] <- ub[i]
     }
   }
 
-  ## Use degree for initial values if provided
+  ## Use degree for initial values if provided, and check whether the
+  ## polynomial basis is well-conditioned or not. If it is, use the
+  ## maximum well-conditioned basis.
 
   ill.conditioned <- check.max.degree(xdat,rep(degree.max,num.numeric),Bernstein=Bernstein)
   degree.max.vec <- attr(ill.conditioned, "degree.max.vec")
 
   if(cv == "degree-bandwidth") {
     ub[(num.bw+1):(num.bw+num.numeric)] <- ifelse(ub[(num.bw+1):(num.bw+num.numeric)] > degree.max.vec, degree.max.vec, ub[(num.bw+1):(num.bw+num.numeric)])
+    for(i in (num.bw+1):(num.bw+num.numeric)) {
+      INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.integer
+      MIN.MESH.SIZE[[i]] <- min.mesh.size.integer
+      MIN.POLL.SIZE[[i]] <- min.poll.size.integer
+    }
   }
+
+  ## Assign the NOMAD parameters to opts which is passed to snomadr()
+
+  opts <- list()
+  opts$"EPSILON" <- .Machine$double.eps
+  opts$"MAX_BB_EVAL" <- max.bb.eval
+  opts$"INITIAL_MESH_SIZE" <- INITIAL.MESH.SIZE
+  opts$"MIN_MESH_SIZE" <- MIN.MESH.SIZE
+  opts$"MIN_POLL_SIZE" <- MIN.POLL.SIZE
 
   if(is.null(degree)) {
     if(cv == "degree-bandwidth") {
       degree <- numeric(num.numeric)
       for(i in 1:num.numeric) {
-        degree[i] <- 1;## Always start from local linear for first attempt...
+        ## We adopt the convention to always start from a polynomial
+        ## or degree 1 for the first search attempt
+        degree[i] <- 1
       }
     }
     else {
@@ -1913,6 +2023,17 @@ glpcvNOMAD <- function(ydat=NULL,
     }
   }
 
+  ## Here we attempt to do some `smart' branching during search. If
+  ## the bandwidth for a categorical predictor hits its upper bound it
+  ## is `smoothed out', its kernel becomes a constant function, and
+  ## the categorical predictor and does not influence the fit,
+  ## delete-one or otherwise. If the bandwidth for any continuous
+  ## predictor is `large' (> bandwidth.max), the variable is smoothed
+  ## out if its polynomial degree is zero otherwise it is the global
+  ## polynomial fit (W) in that dimension If all bandwidths hit their
+  ## upper bound/are large, we get the global polynomial OLS fit. Note
+  ## we have both the ls.cv and aic.cv methods.
+    
   ## Create the function wrappers to be fed to the snomadr solver for
   ## leave-one-out cross-validation and Hurvich, Simonoff, and Tsai's
   ## AIC_c approach
@@ -1935,6 +2056,7 @@ glpcvNOMAD <- function(ydat=NULL,
     cv.shrink <- params$cv.shrink
     cv.warning <- params$cv.warning
     Bernstein <- params$Bernstein
+    bw.switch <- params$bw.switch
 
     bw.gamma <- input[1:num.bw]
     if(cv=="degree-bandwidth")
@@ -1949,7 +2071,12 @@ glpcvNOMAD <- function(ydat=NULL,
                degree=degree,
                Bernstein=Bernstein)
 
-    if(all(bw.gamma>=0)&&all(bw.gamma[!xdat.numeric]<=1)) {
+    console <- newLineConsole()
+    console <- printClear(console)
+    console <- printPop(console)
+
+    if(all(bw.gamma < bw.switch)) {
+      ## No bandwidths hit their upper bounds
       lscv <- minimand.cv.ls(bws=bw.gamma,
                              ydat=ydat,
                              xdat=xdat,
@@ -1963,10 +2090,35 @@ glpcvNOMAD <- function(ydat=NULL,
                              cv.shrink=cv.shrink,
                              cv.warning=cv.warning,
                              ...)
+    } else if(all(bw.gamma >= bw.switch)) {
+      ## All bandwidths hit their upper bounds
+      if(all(degree==0)) {
+        lscv <- mean((ydat-mean(ydat))^2)
+      } else {
+        model <- lm(ydat~W-1)
+        htt <- hatvalues(model)
+        htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+        lscv <- mean((residuals(model)/(1-htt))^2)
+      }
     } else {
-      lscv <- maxPenalty
+      ## Some bandwidths hit their upper bounds
+      degree.sub <- degree[bw.gamma[xdat.numeric]<bw.switch[xdat.numeric]]
+      lscv <- minimand.cv.ls(bws=bw.gamma[bw.gamma<bw.switch],
+                             ydat=ydat,
+                             xdat=xdat[,bw.gamma<bw.switch,drop=FALSE],
+                             degree=if(length(degree.sub)==0){0}else{degree.sub},
+                             W=W,
+                             ckertype=ckertype,
+                             ckerorder=ckerorder,
+                             ukertype=ukertype,
+                             okertype=okertype,
+                             bwtype=bwtype,
+                             cv.shrink=cv.shrink,
+                             cv.warning=cv.warning,
+                             ...)
     }
-
+    console <- printPush("\r                                                                         ",console = console)
+    console <- printPush(paste("\rfv = ",format(lscv)," ",sep=""),console = console)
     return(lscv)
   }
 
@@ -1988,10 +2140,13 @@ glpcvNOMAD <- function(ydat=NULL,
     cv.shrink <- params$cv.shrink
     cv.warning <- params$cv.warning
     Bernstein <- params$Bernstein
+    bw.switch <- params$bw.switch
 
     bw.gamma <- input[1:num.bw]
     if(cv=="degree-bandwidth")
       degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
+
+    ## Test for negative degrees of freedom
 
     if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
       return(maxPenalty)
@@ -2000,7 +2155,12 @@ glpcvNOMAD <- function(ydat=NULL,
                degree=degree,
                Bernstein=Bernstein)
 
-    if(all(bw.gamma>=0)&&all(bw.gamma[!xdat.numeric]<=1)) {
+    console <- newLineConsole()
+    console <- printClear(console)
+    console <- printPop(console)
+
+    if(all(bw.gamma < bw.switch)) {
+      ## No bandwidths hit their upper bounds
       aicc <- minimand.cv.aic(bws=bw.gamma,
                               ydat=ydat,
                               xdat=xdat,
@@ -2014,10 +2174,35 @@ glpcvNOMAD <- function(ydat=NULL,
                               cv.shrink=cv.shrink,
                               cv.warning=cv.warning,
                               ...)
+    } else if(all(bw.gamma >= bw.switch)) {
+      ## All bandwidths hit their upper bounds
+      if(all(degree==0)) {
+        aicc <- mean((ydat-mean(ydat))^2)
+      } else {
+        model <- lm(ydat~W-1)
+        htt <- hatvalues(model)
+        htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+        aicc <- mean((residuals(model)/(1-htt))^2)
+      }
     } else {
-      aicc <- maxPenalty
+      ## Some bandwidths hit their upper bounds
+      degree.sub <- degree[bw.gamma[xdat.numeric]<bw.switch[xdat.numeric]]
+      aicc <- minimand.cv.aic(bws=bw.gamma[bw.gamma<bw.switch],
+                              ydat=ydat,
+                              xdat=xdat[,bw.gamma<bw.switch,drop=FALSE],
+                              degree=if(length(degree.sub)==0){0}else{degree.sub},
+                              W=W,
+                              ckertype=ckertype,
+                              ckerorder=ckerorder,
+                              ukertype=ukertype,
+                              okertype=okertype,
+                              bwtype=bwtype,
+                              cv.shrink=cv.shrink,
+                              cv.warning=cv.warning,
+                              ...)
     }
-
+    console <- printPush("\r                                                                         ",console = console)
+    console <- printPush(paste("\rfv = ",format(aicc)," ",sep=""),console = console)
     return(aicc)
   }
 
@@ -2040,16 +2225,14 @@ glpcvNOMAD <- function(ydat=NULL,
   params$cv.shrink <- cv.shrink
   params$cv.warning <- cv.warning
   params$Bernstein <- Bernstein
-
-  ## No constraints
-
-  bbout <-c(0)
+  params$bw.switch <- bw.switch
 
   ## Multistarting
 
   fv.vec <- numeric(nmulti)
 
   ## Whether or not to display the information in snomadr
+
   print.output <- FALSE
   console <- newLineConsole()
   if(!is.null(opts$DISPLAY_DEGREE)){
@@ -2062,22 +2245,23 @@ glpcvNOMAD <- function(ydat=NULL,
     console <- printPush("\rCalling NOMAD (Nonsmooth Optimization by Mesh Adaptive Direct Search)\n",console = console)
   }
 
-  degree.opt <- degree
-
   ## Use bandwidth for initial values if provided
 
   if(is.null(bandwidth)) {
-    init.search.vals <- runif(num.bw,0,1)
+    init.search.vals <- numeric()
     for(i in 1:num.bw) {
       if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-        init.search.vals[i] <- bandwidth.min + runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
+        init.search.vals[i] <- runif(1,0.5+lb[i],1.5)*length(ydat)^{2/(num.numeric+2*ckerorder)}
       }
       if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
-        init.search.vals[i] <- round(runif(1,2,sqrt(ub[i])))
+        init.search.vals[i] <- round(runif(1,lb[i],sqrt(ub[i])))
+      }
+      if(xdat.numeric[i]!=TRUE) {
+        init.search.vals[i] <- runif(1,lb[i],1)*length(ydat)^{2/(num.numeric+2*ckerorder)}
       }
       if(xdat.unordered[i]==TRUE && ukertype=="aitchisonaitken") {
         c.num <- length(unique(xdat[,i]))
-        init.search.vals[i] <- runif(1,0,(c.num-1)/c.num)
+        init.search.vals[i] <- runif(1,lb[i],(c.num-1)/c.num-lb[i])*length(ydat)^{2/(num.numeric+2*ckerorder)}
       }
     }
   } else {
@@ -2085,21 +2269,25 @@ glpcvNOMAD <- function(ydat=NULL,
   }
 
   ## Generate all initial points for the multiple restarting
+
 	x0.pts <- matrix(numeric(1), nmulti, length(bbin))
+
 	for(iMulti in 1:nmulti) {
-    ## First initialize to values for factors (`liracine' kernel)
     if(iMulti != 1) {
-      init.search.vals <- runif(num.bw,0,1)
+      init.search.vals <- numeric()
       for(i in 1:num.bw) {
         if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-          init.search.vals[i] <- bandwidth.min + runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
+          init.search.vals[i] <- runif(1,0.5+lb[i],1.5)*length(ydat)^{2/(num.numeric+2*ckerorder)}
         }
         if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
-          init.search.vals[i] <- round(runif(1,2,sqrt(ub[i])))
+          init.search.vals[i] <- round(runif(1,lb[i],sqrt(ub[i])))
+        }
+        if(xdat.numeric[i]!=TRUE) {
+          init.search.vals[i] <- runif(1,lb[i],1)*length(ydat)^{2/(num.numeric+2*ckerorder)}
         }
         if(xdat.unordered[i]==TRUE && ukertype=="aitchisonaitken") {
           c.num <- length(unique(xdat[,i]))
-          init.search.vals[i] <- runif(1,0,(c.num-1)/c.num)
+          init.search.vals[i] <- runif(1,lb[i],(c.num-1)/c.num-lb[i])*length(ydat)^{2/(num.numeric+2*ckerorder)}
         }
       }
     }
@@ -2124,7 +2312,7 @@ glpcvNOMAD <- function(ydat=NULL,
 												n=length(bbin),
 												x0=as.numeric(x0.pts),
 												bbin=bbin,
-												bbout=bbout,
+												bbout=0,
 												lb=lb,
 												ub=ub,
 												nmulti=ifelse(nmulti==1,0,nmulti),
@@ -2138,7 +2326,7 @@ glpcvNOMAD <- function(ydat=NULL,
 												n=length(bbin),
 												x0=as.numeric(x0.pts),
 												bbin=bbin,
-												bbout=bbout,
+												bbout=0,
 												lb=lb,
 												ub=ub,
 												nmulti=ifelse(nmulti==1,0,nmulti),
@@ -2150,13 +2338,23 @@ glpcvNOMAD <- function(ydat=NULL,
 
 	fv.vec[1] <- solution$objective
 
-	bw.opt <- solution$solution[1:num.bw]
-  bw.opt.sf <- NULL
+	bw.opt.sf <- solution$solution[1:num.bw]
+
+  ## We optimize at the level of scaling factors (multiples of
+  ## bandwidths) so we need to back out the unscaled (raw) bandwidths.
+  
+  bw.opt <- bw.opt.sf
+
   if(bwtype=="fixed") {
-    bw.opt.sf <- bw.opt
     for(i in 1:num.numeric) {
       sd.xdat <- sd.robust(xdat[,numeric.index[i]])
-      bw.opt.sf[numeric.index[i]] <- bw.opt[numeric.index[i]]/sd.xdat*length(ydat)^{1/(num.numeric+4)}
+      bw.opt[numeric.index[i]] <- bw.opt[numeric.index[i]]*sd.xdat*length(ydat)^{-1/(num.numeric+2*ckerorder)}
+    }
+  } 
+
+  for(i in 1:num.bw) {
+    if(!xdat.numeric[i]) {
+      bw.opt[i] <- bw.opt[i]*length(ydat)^{-2/(num.numeric+2*ckerorder)}
     }
   }
 
@@ -2165,7 +2363,15 @@ glpcvNOMAD <- function(ydat=NULL,
     for(i in num.numeric){
       if(isTRUE(all.equal(degree.opt[i],ub[num.bw+i]))) warning(paste(" Optimal degree for numeric predictor ",i," equals search upper bound (", ub[num.bw+i],")",sep=""))
     }
-	}
+	} else {
+    degree.opt <- degree
+  }
+
+  if(!is.null(opts$MAX_BB_EVAL)){
+    if(nmulti>0) {if(nmulti*opts$MAX_BB_EVAL <= solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep=""))} 
+    if(nmulti==0) {if(opts$MAX_BB_EVAL <= solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep="")) }
+  }
+
 	fv <- solution$objective
 
 	best <- NULL

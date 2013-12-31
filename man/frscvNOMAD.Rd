@@ -28,7 +28,10 @@ frscvNOMAD(xz,
            segments = segments, 
            include = include, 
            random.seed = 42,
-           opts = list(),
+           max.bb.eval = 10000,
+           initial.mesh.size.integer = "1",
+           min.mesh.size.integer = paste("r",sqrt(.Machine$double.eps),sep=""),
+           min.poll.size.integer = paste("r",sqrt(.Machine$double.eps),sep=""),
            nmulti = 0,
            tau = NULL,
            weights = NULL,
@@ -109,10 +112,26 @@ frscvNOMAD(xz,
  be generated using this seed when \code{nmulti > 0}
 }
       
-\item{opts}{
-  arguments passed to the NOMAD solver
+  \item{max.bb.eval}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
   }
-  
+
+  \item{initial.mesh.size.integer}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.mesh.size.integer}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.poll.size.integer}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }      
+
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
@@ -213,12 +232,13 @@ frscvNOMAD(xz,
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
     Theory and Practice,} Princeton University Press.
   
-  Ma, S. and J.S. Racine and L. Yang (2011), \dQuote{Spline Regression
-  in the Presence of Categorical Predictors,} manuscript.
+  Ma, S. and J.S. Racine and L. Yang (under revision), \dQuote{Spline
+  Regression in the Presence of Categorical Predictors,} Journal of
+  Applied Econometrics.
 
-  Ma, S. and J.S. Racine (forthcoming), \dQuote{Additive Regression
+  Ma, S. and J.S. Racine (2013), \dQuote{Additive Regression
   Splines with Irrelevant Categorical and Continuous Regressors,}
-  Statistica Sinica.
+  Statistica Sinica, Volume 23, 515-541.
 
 }
 

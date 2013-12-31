@@ -8,6 +8,7 @@
 ## Load libraries
 
 require(crs)
+options(crs.messages=FALSE)
 require(quadprog)
 
 num.boot <- 999
@@ -41,7 +42,7 @@ x.max <- 5
 ## upper to 0.5 and you would expect to reject the null, while setting
 ## lower and upper to those below and you would expect to fail to
 ## reject the null). Note also that imposing nonbinding constraints
-## can be checked by inspecting p.updated prior to conducting the
+## can be checked by inspecting p.hat prior to conducting the
 ## bootstrap... if they are all equal to 1/n then you have imposed a
 ## non-binding constraint and in this case the null distribution is
 ## degenerate.
@@ -75,54 +76,45 @@ model.unres <- crs(y~x1+x2,
                    data=data.train,
                    nmulti=5)
 
-## Start from uniform weights equal to 1/n. If constraints are
-## non-binding these are optimal.
-
-p <- rep(1/n,n)
-Dmat <- diag(1,n,n)
-dvec <- as.vector(p)
-
 ## If you wish to alter the constraints, you need to modify Amat and
 ## bvec.
 
 B <- model.matrix(model.unres$model.lm)
-Aymat.res <- n*t(t(B%*%solve(t(B)%*%B)%*%t(B))*data.train$y)
+Aymat.res <- t(B%*%solve(t(B)%*%B)%*%t(B))*data.train$y
 
 ## Here is Amat
 
-Amat <- t(rbind(rep(1,n),
-                Aymat.res,
-                -Aymat.res))
+Amat <- cbind(Aymat.res,
+              -Aymat.res)
 
 rm(Aymat.res)
 
 ## Here is bvec
 
-bvec <- c(0,
-          (rep(lower,n)-fitted(model.unres)),
-          (fitted(model.unres)-rep(upper,n)))
+bvec <- c(rep(lower,n),
+          -rep(upper,n))
 
 ## Solve the quadratic programming problem
 
-QP.output <- solve.QP(Dmat=Dmat,dvec=dvec,Amat=Amat,bvec=bvec,meq=1)
+QP.output <- solve.QP(Dmat=diag(n),dvec=rep(1,n),Amat=Amat,bvec=bvec)
+
+if(is.nan(QP.output$value)) stop(" solve.QP failed. Try smoother curve (larger bandwidths or polynomial order)")
 
 ## No longer needed...
 
 rm(Amat,bvec)
 
-## Get the solution and update the uniform weights
+## Get the solution
 
-w.hat <- QP.output$solution
+p.hat <- QP.output$solution
 
-p.updated <- p + w.hat
-
-D.stat <- D(p.updated)
+D.stat <- D(p.hat)
 
 if(D.stat > 0) {
   
   ## Generate fitted values and data from constrained model
   
-  data.trans <- data.frame(y=p.updated*n*data.train$y,data.train[,2:ncol(data.train)])
+  data.trans <- data.frame(y=p.hat*data.train$y,data.train[,2:ncol(data.train)])
   names(data.trans) <- names(data.train) ## Necessary when there is only 1 regressor
   model.res <- crs(y~x1+x2,cv="none",
                    degree=model.unres$degree,
@@ -150,31 +142,29 @@ if(D.stat > 0) {
                       data=data.boot)
 
     B <- model.matrix(model.boot$model.lm)
-    Aymat.res <- n*t(t(B%*%solve(t(B)%*%B)%*%t(B))*data.boot$y)
+    Aymat.res <- t(B%*%solve(t(B)%*%B)%*%t(B))*data.boot$y
 
     ## Here is Amat
     
-    Amat <- t(rbind(rep(1,n),
-                    Aymat.res,
-                    -Aymat.res))
+    Amat <- cbind(Aymat.res,
+                  -Aymat.res)
     
     ## Here is bvec
     
-    bvec <- c(0,
-              (rep(lower,n)-fitted(model.boot)),
-              (fitted(model.boot)-rep(upper,n)))
+    bvec <- c(rep(lower,n),
+              -rep(upper,n))
     
     ## Solve the quadratic programming problem
     
-    QP.output <- solve.QP(Dmat=Dmat,dvec=dvec,Amat=Amat,bvec=bvec,meq=1)
+    QP.output <- solve.QP(Dmat=diag(n),dvec=rep(1,n),Amat=Amat,bvec=bvec)
 
-    ## Get the solution and update the uniform weights
+    if(is.nan(QP.output$value)) stop(" solve.QP failed. Try smoother curve (larger bandwidths or polynomial order)")
     
-    w.hat <- QP.output$solution
+    ## Get the solution
     
-    p.updated <- p + w.hat
+    p.hat <- QP.output$solution
     
-    D.boot[b] <- D(p.updated)
+    D.boot[b] <- D(p.hat)
     
   }
   

@@ -61,13 +61,6 @@ model.gradient.unres <- model.unres$deriv.mat
 
 summary(model.unres)
 
-## Start from uniform weights equal to 1/n. If constraints are
-## non-binding these are optimal.
-
-p <- rep(1/n,n)
-Dmat <- diag(1,n,n)
-dvec <- as.vector(p)
-
 ## If you wish to alter the constraints, you need to modify Amat and
 ## bvec.
 
@@ -80,36 +73,33 @@ dvec <- as.vector(p)
 
 ## B <- model.matrix(model.unres$model.lm)
 
-source(paste(path.package("crs"),"/demo/spline.R", sep="")) 
+B <- crs:::prod.spline(x=data.train[,-1],
+                       K=cbind(model.unres$degree,model.unres$segments),
+                       basis=model.unres$basis)
 
-B <- prod.spline(x=data.train[,-1],
-                 K=cbind(model.unres$degree,model.unres$segments),
-                 basis=model.unres$basis)
+B.x1 <- crs:::prod.spline(x=data.train[,-1],
+                          K=cbind(model.unres$degree,model.unres$segments),
+                          basis=model.unres$basis,
+                          deriv.index=1,
+                          deriv=1)
 
-B.x1 <- prod.spline(x=data.train[,-1],
-                 K=cbind(model.unres$degree,model.unres$segments),
-                 basis=model.unres$basis,
-                 deriv.index=1,
-                 deriv=1)
+Aymat.res.x1 <- t(B.x1%*%solve(t(B)%*%B)%*%t(B))*data.train$y
 
-Aymat.res.x1 <- n*t(t(B.x1%*%solve(t(B)%*%B)%*%t(B))*data.train$y)
+B.x2 <- crs:::prod.spline(x=data.train[,-1],
+                          K=cbind(model.unres$degree,model.unres$segments),
+                          basis=model.unres$basis,
+                          deriv.index=2,
+                          deriv=1)
 
-B.x2 <- prod.spline(x=data.train[,-1],
-                 K=cbind(model.unres$degree,model.unres$segments),
-                 basis=model.unres$basis,
-                 deriv.index=2,
-                 deriv=1)
-
-Aymat.res.x2 <- n*t(t(B.x2%*%solve(t(B)%*%B)%*%t(B))*data.train$y)
+Aymat.res.x2 <- t(B.x2%*%solve(t(B)%*%B)%*%t(B))*data.train$y
 
 
 ## Here is Amat
 
-Amat <- t(rbind(rep(1,n),
-                Aymat.res.x1,
-                -Aymat.res.x1,
-                Aymat.res.x2,
-                -Aymat.res.x2))
+Amat <- cbind(Aymat.res.x1,
+              -Aymat.res.x1,
+              Aymat.res.x2,
+              -Aymat.res.x2)
 
 ## Conserve memory
 
@@ -117,30 +107,29 @@ rm(B,B.x1,B.x2,Aymat.res.x1,Aymat.res.x2)
 
 ## Here is bvec
 
-bvec <- c(0,
-          (rep(lower,n)-model.gradient.unres[,1]),
-          (model.gradient.unres[,1]-rep(upper,n)),
-          (rep(lower,n)-model.gradient.unres[,2]),
-          (model.gradient.unres[,2]-rep(upper,n)))
+bvec <- c(rep(lower,n),
+          -rep(upper,n),
+          rep(lower,n),
+          -rep(upper,n))
 
 
 ## Solve the quadratic programming problem
 
-QP.output <- solve.QP(Dmat=Dmat,dvec=dvec,Amat=Amat,bvec=bvec,meq=1)
+QP.output <- solve.QP(Dmat=diag(n),dvec=rep(1,n),Amat=Amat,bvec=bvec)
+
+if(is.nan(QP.output$value)) stop(" solve.QP failed. Try smoother curve (larger bandwidths or polynomial order)")
 
 ## No longer needed...
 
-rm(Amat,bvec,Dmat,dvec)
+rm(Amat,bvec)
 
-## Get the solution and update the uniform weights
+## Get the solution
 
-w.hat <- QP.output$solution
-
-p.updated <- p + w.hat
+p.hat <- QP.output$solution
 
 ## Now estimate the restricted model
 
-data.trans <- data.frame(y=p.updated*n*data.train$y,data.train[,2:ncol(data.train),drop=FALSE])
+data.trans <- data.frame(y=p.hat*data.train$y,data.train[,2:ncol(data.train),drop=FALSE])
 
 model.res <- crs(y~x1+x2,cv="none",
                  degree=model.unres$degree,

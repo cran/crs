@@ -62,18 +62,14 @@ crsiv <- function(y,
   ## <samuele.centorrino@univ-tlse1.fr>
   ## the following papers:
 
-  ## A) Econometrica (forthcoming, article date February 25 2011)
-
-  ## "Nonparametric Instrumental Regression"
-  ## S. Darolles, Y. Fan, J.P. Florens, E. Renault
+  ## A) Econometrica (2011) "Nonparametric Instrumental Regression"
+  ## S. Darolles, Y. Fan, J.P. Florens, E. Renault, Volume 79,
+  ## 1541-1565.
 
   ## B) Econometrics Journal (2010), volume 13, pp. S1–S27. doi:
-  ## 10.1111/j.1368-423X.2010.00314.x
-
-  ## "The practice of non-parametric estimation by solving inverse
-  ## problems: the example of transformation models"
-
-  ## FREDERIQUE FEVE AND JEAN-PIERRE FLORENS
+  ## 10.1111/j.1368-423X.2010.00314.x "The practice of non-parametric
+  ## estimation by solving inverse problems: the example of
+  ## transformation models" Frederique Feve and Jean-Pierre Florens,
   ## IDEI and Toulouse School of Economics, Universite de Toulouse
   ## Capitole 21 alle de de Brienne, 31000 Toulouse, France. E-mails:
   ## feve@cict.fr, florens@cict.fr
@@ -98,9 +94,8 @@ crsiv <- function(y,
 
   ## NOTE: for Cr, in the transformation model case treated in Feve &
   ## Florens (2010) this maps Z onto the Y space. In the IV case
-  ## (Darrolles, Fan, Florens & Renault (2011, forthcoming Econometrica)
-  ## it maps W (the instrument) onto the space of the endogenous
-  ## regressor Z.
+  ## (Darrolles, Fan, Florens & Renault (2011) it maps W (the
+  ## instrument) onto the space of the endogenous regressor Z.
 
   ## NOTE: for r, in the transformation model it will be equivalent to
   ## the vector of exogenous covariates, and in the endogenous case r is
@@ -111,7 +106,7 @@ crsiv <- function(y,
   ## phi:   the vector of estimated values for the unknown function at the evaluation points
 
   tikh <- function(alpha,CZ,CY,Cr.r){
-    return(solve(alpha*diag(length(Cr.r)) + CY%*%CZ) %*% Cr.r) ## This must be computable via ridge... step 1, step 2, same alpha...
+    return(chol2inv(chol(alpha*diag(length(Cr.r)) + CY%*%CZ) %*% Cr.r)) ## This must be computable via ridge... step 1, step 2, same alpha...
   }
 
   ## This function applies the iterated Tikhonov approach which
@@ -127,9 +122,8 @@ crsiv <- function(y,
 
   ## NOTE: for Cr, in the transformation model case treated in Feve &
   ## Florens (2010) this maps Z onto the Y space. In the IV case
-  ## (Darrolles, Fan, Florens & Renault (2011, forthcoming Econometrica)
-  ## it maps W (the instrument) onto the space of the endogenous
-  ## regressor Z.
+  ## (Darrolles, Fan, Florens & Renault (2011) it maps W (the
+  ## instrument) onto the space of the endogenous regressor Z.
 
   ## NOTE: for r, in the transformation model it will be equivalent to
   ## the vector of exogenous covariates, and in the endogenous case r is
@@ -145,7 +139,7 @@ crsiv <- function(y,
   ## Cr.r is always E.E.y.w.z, r is always E.y.w
 
   ittik <- function(alpha,CZ,CY,Cr.r,r) {
-    invmat <- solve(alpha*diag(length(Cr.r)) + CY%*%CZ)
+    invmat <- chol2inv(chol(alpha*diag(length(Cr.r)) + CY%*%CZ))
     tikh.val <- invmat %*% Cr.r
     phi <- tikh.val + alpha * invmat %*% tikh.val ## Not sure about this...
     return(sum((CZ%*%phi - r)^2)/alpha)     ## This is a sum of squared values so CZ%*%phi can be computed with fitted(crs())...
@@ -250,7 +244,7 @@ crsiv <- function(y,
     if(crs.messages) options(crs.messages=TRUE)
     E.y.w <- predict(model,newdata=evaldata,...)
     B <- model.matrix(model$model.lm)
-    KYW <- B%*%solve(t(B)%*%B)%*%t(B)
+    KYW <- B%*%chol2inv(chol(t(B)%*%B))%*%t(B)
 
     ## Next, we conduct the regression spline of E(y|w) on z
 
@@ -266,7 +260,7 @@ crsiv <- function(y,
     if(crs.messages) options(crs.messages=TRUE)
     E.E.y.w.z <- predict(model,newdata=evaldata,...)
     B <- model.matrix(model$model.lm)
-    KYWZ <- B%*%solve(t(B)%*%B)%*%t(B)
+    KYWZ <- B%*%chol2inv(chol(t(B)%*%B))%*%t(B)
 
     ## Next, we minimize the function ittik to obtain the optimal value
     ## of alpha (here we use the iterated Tikhonov function) to
@@ -314,7 +308,7 @@ crsiv <- function(y,
     if(crs.messages) options(crs.messages=TRUE)
     E.phi.w <- predict(model,newdata=evaldata,...)
     B <- model.matrix(model$model.lm)
-    KPHIW <- B%*%solve(t(B)%*%B)%*%t(B)
+    KPHIW <- B%*%chol2inv(chol(t(B)%*%B))%*%t(B)
 
     ## Conduct kernel regression of E(phi(z)|w) on z
 
@@ -329,7 +323,7 @@ crsiv <- function(y,
     model <- crs(formula.Ephiwz,opts=opts,data=traindata,...)
     if(crs.messages) options(crs.messages=TRUE)
     B <- model.matrix(model$model.lm)
-    KPHIWZ <- B%*%solve(t(B)%*%B)%*%t(B)
+    KPHIWZ <- B%*%chol2inv(chol(t(B)%*%B))%*%t(B)
 
     ## Next, we minimize the function ittik to obtain the optimal value of
     ## alpha (here we use the iterated Tikhonov approach) to determine the

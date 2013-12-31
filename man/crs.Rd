@@ -7,7 +7,8 @@
 \description{ \code{crs} computes a regression spline estimate of a
     one (1) dimensional dependent variable on an \code{r}-dimensional
     vector of continuous and categorical
-    (\code{\link{factor}}/\code{\link{ordered}}) predictors.}
+    (\code{\link{factor}}/\code{\link{ordered}}) predictors (Ma and
+    Racine (2013), Ma, Racine and Yang (under revision)).}
 
 \usage{
 crs(\dots)
@@ -55,11 +56,13 @@ crs(\dots)
     model.return = FALSE,
     restarts = 0,
     random.seed = 42,
-    opts = list("MAX_BB_EVAL"=10000,
-                "EPSILON"=.Machine$double.eps,
-                "INITIAL_MESH_SIZE"="r1.0e-01",
-                "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
-                "MIN_POLL_SIZE"=paste("r",sqrt(.Machine$double.eps),sep="")),
+    max.bb.eval = 10000,
+    initial.mesh.size.real = "r1.0e-01",
+    initial.mesh.size.integer = "1",
+    min.mesh.size.real = paste(sqrt(.Machine$double.eps)),
+    min.mesh.size.integer = paste(sqrt(.Machine$double.eps)),
+    min.poll.size.real = paste(sqrt(.Machine$double.eps)),
+    min.poll.size.integer = paste(sqrt(.Machine$double.eps)),
     nmulti = 5,
     tau = NULL,
     weights = NULL,
@@ -204,10 +207,41 @@ in \code{x} are included or omitted from the resulting estimate }
     \code{\link{frscvNOMAD}} or \code{\link{krscvNOMAD}} and
     \code{nmulti > 0} }
       
-  \item{opts}{
+  \item{max.bb.eval}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{initial.mesh.size.real}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{initial.mesh.size.integer}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.mesh.size.real}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.mesh.size.integer}{
     arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
     further details)
   }
+
+  \item{min.poll.size.real}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.poll.size.integer}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }      
+
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
@@ -444,12 +478,13 @@ in \code{x} are included or omitted from the resulting estimate }
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
     Theory and Practice,} Princeton University Press.
 
-  Ma, S. and J.S. Racine and L. Yang (2011), \dQuote{Spline Regression
-  in the Presence of Categorical Predictors,} manuscript.
+  Ma, S. and J.S. Racine and L. Yang (under revision), \dQuote{Spline
+  Regression in the Presence of Categorical Predictors,} Journal of
+  Applied Econometrics.
 
-  Ma, S. and J.S. Racine (forthcoming), \dQuote{Additive Regression
+  Ma, S. and J.S. Racine (2013), \dQuote{Additive Regression
   Splines with Irrelevant Categorical and Continuous Regressors,}
-  Statistica Sinica.
+  Statistica Sinica, Volume 23, 515-541.
 
   Racine, J.S. (2011), \dQuote{Cross-Validated Quantile Regression
   Splines,} manuscript.
