@@ -62,22 +62,31 @@ summary(model)
 
 
 ###################################################
-### code chunk number 7: crs.Rnw:563-573
+### code chunk number 7: crs.Rnw:566-585
 ###################################################
 ## When kernel=FALSE, we could use the anova() function
-model.res <- crs(y~x1+x2+z,cv="none",degree=model$degree,basis=model$basis,include=0)
-## anova(model.res$model.lm,model$model.lm)
-## We could also do this manually...
-F <- model$df.residual*(sum(residuals(model.res)^2)
-                        -sum(residuals(model)^2))/sum(residuals(model)^2)
-F
-## Compute the P-value for the F-statistic
-P <- 1-pf(F,1,model$df.residual)
-P
+## and set model.return=TRUE.
+## Unrestricted model:
+model <- crs(y~x1+x2+z,cv="none",
+             degree=model$degree,
+             segments=model$segments,
+             basis=model$basis,
+             kernel=FALSE,
+             include=1,
+             model.return=TRUE)
+## Restricted model:
+model.res <- crs(y~x1+x2+z,cv="none",
+                 degree=model$degree,
+                 segments=model$segments,
+                 basis=model$basis,
+                 kernel=FALSE,
+                 include=0,
+                 model.return=TRUE)
+anova(model.res$model.lm,model$model.lm)
 
 
 ###################################################
-### code chunk number 8: crs.Rnw:578-611
+### code chunk number 8: crs.Rnw:590-623
 ###################################################
 num.eval <- 50
 x1.seq.0 <- seq(min(x1[z==0]),max(x1[z==0]),length=num.eval)
