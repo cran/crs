@@ -1,5 +1,5 @@
-decd9bd17a4b56008d709cb0faf3a9ac *CHANGELOG
-2edb9e4b43357ee0d97df2fb2f8cfd95 *DESCRIPTION
+affe3817aefb884ebd8ed70014a54921 *CHANGELOG
+52d5557147622eba87ccaf2fa3cae808 *DESCRIPTION
 509772f8e88724b372a7ee0f3bd04397 *NAMESPACE
 e435b693e96651164b51687be1ad27bd *R/clsd.R
 627abbfdb9778d94525742417563a3fc *R/console.R
@@ -24,7 +24,7 @@ eab37121264c8443e4438e01177145d0 *R/snomadr.R
 80b17188ade8ff2163a7ec59ebee9cde *R/spline.R
 ddd9e2a284a91a95faca81965f5b4050 *R/stepCV.R
 265534782cd286b3d9541e63f34ce2ce *R/util.R
-e9d04a48b756886240dabd382d66f509 *R/zzz.R
+acfcb4b8bcd55f4019d493667eb4e9f7 *R/zzz.R
 e756b17f81ca48a635c250a1a5bd65c2 *README.md
 7f1809dbc6428c49105f7cbab6d8310f *build/vignette.rds
 f597d077e6f51df6592d99d7fb35dd31 *cleanup
@@ -51,12 +51,12 @@ fc4aac2de02a42ebaf393121758b1142 *demo/radial_persp.R
 5449fd27646fceaff1f05234cc567658 *inst/COPYRIGHTS
 8e765fc63219ac54c007f66415527bef *inst/doc/crs.R
 12e97fbff26f45d2aa373f75fb127f62 *inst/doc/crs.Rnw
-a37b8811aa9cdf233c7035d2624cecda *inst/doc/crs.pdf
-b0abe8ed7d27ca9231facaf2209dfe7f *inst/doc/crs_faq.Rnw
-cae768ac627d1ebf9199d06b7829ae87 *inst/doc/crs_faq.pdf
+3ed6b132ca2de1fe3e749e1f1580e766 *inst/doc/crs.pdf
+7a6faf4ddede5e8bb5927927c9394918 *inst/doc/crs_faq.Rnw
+c5630220489cbd368356eaec3a465be1 *inst/doc/crs_faq.pdf
 c6306c347c24605e41370f8400bcbc3e *inst/doc/spline_primer.R
 ce81529d3bc4f74ad7ac3154bf6a95b2 *inst/doc/spline_primer.Rnw
-61b782a242572fa3adeb604ec701a4c0 *inst/doc/spline_primer.pdf
+a774bc5fac2df8f6e04a13cd7823bbdf *inst/doc/spline_primer.pdf
 6de9cc9f371c4c366fdce4bdbb27b97b *man/clsd.Rd
 1ee3f66f68b179e1301e833f94332a71 *man/crs-package.Rd
 698e168f7b990232fc3896b320344597 *man/crs.Rd
@@ -118,7 +118,7 @@ ddbb4f40a34136d9cdfd054638d8346f *src/nomad_src/LH_Search.cpp
 fd7950b725cdc29d44d721712dee9972 *src/nomad_src/LH_Search.hpp
 233a2db68f5244555448f0fcaba18780 *src/nomad_src/L_Curve.cpp
 bbc8a2bd6d7c89fafe1d7b4a42462b09 *src/nomad_src/L_Curve.hpp
-eea8d0bba5c8ce9f1d8496b104eca3e4 *src/nomad_src/Mads.cpp
+4c4a009cd9338763f8ae9ed4c7e8fff2 *src/nomad_src/Mads.cpp
 8ad3714163985a7de7283fc13272df48 *src/nomad_src/Mads.hpp
 57c588010e0f8a613983a3ce19430643 *src/nomad_src/Mesh.cpp
 937b522c776fe6577ed0122f28904d93 *src/nomad_src/Mesh.hpp
@@ -184,9 +184,6 @@ f9cb54a8cb12cc6a479f66dba7489cc6 *src/nomad_src/Uncopyable.hpp
 22a61fa39af161a20702d78660f89e5f *src/nomad_src/Variable_Group.hpp
 1685a45ab0332f9c6610d2c1a7193f01 *src/nomad_src/defines.hpp
 b52f2d57d10c4f7ee67a7eb9615d5d24 *src/nomad_src/lgpl.txt
-1464c77e667d008bb661587f3c6ff693 *src/nomad_src/makefile
-78db910dd38dfdc36412f8bb7f58b389 *src/nomad_src/makefile.TGP
-b181fec94bb890b627d9d69652e3a07e *src/nomad_src/makefile_no_tgp
 fd012b8f4d3c5fb8eef6e1991d8b50ac *src/nomad_src/nomad.cpp
 a36d354a652cb67d89d65c74e3d928cf *src/nomad_src/nomad.hpp
 f7f9387cd1fe50129ed8f07760bb991c *src/nomad_src/utils.cpp
@@ -195,7 +192,7 @@ fb408d56fb6ff2e758d713f605b7b192 *src/snomadr.cpp
 0395f04ce8da2c677f854fa21a70b5ed *src/snomadr.h
 12e97fbff26f45d2aa373f75fb127f62 *vignettes/crs.Rnw
 de8ef756b3d8d977afbd7a511983d808 *vignettes/crs.bib
-b0abe8ed7d27ca9231facaf2209dfe7f *vignettes/crs_faq.Rnw
+7a6faf4ddede5e8bb5927927c9394918 *vignettes/crs_faq.Rnw
 d28058b9cebca8a4be4dfcb6c6d14781 *vignettes/crs_faq.bib
 ce81529d3bc4f74ad7ac3154bf6a95b2 *vignettes/spline_primer.Rnw
 d71c4e2b80637a6887985a0c501b8b7d *vignettes/spline_primer.bib
