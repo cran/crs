@@ -10,10 +10,10 @@
 
 frscv <- function(xz,
                   y,
-                  degree.max=10, 
-                  segments.max=10, 
-                  degree.min=0, 
-                  segments.min=1, 
+                  degree.max=10,
+                  segments.max=10,
+                  degree.min=0,
+                  segments.min=1,
                   complexity=c("degree-knots","degree","knots"),
                   knots=c("quantiles","uniform", "auto"),
                   basis=c("additive","tensor","glp","auto"),
@@ -37,10 +37,10 @@ frscv <- function(xz,
                       y,
                       restart,
                       num.restarts,
-                      degree.max=degree.max, 
-                      segments.max=segments.max, 
-                      degree.min=degree.min, 
-                      segments.min=segments.min, 
+                      degree.max=degree.max,
+                      segments.max=segments.max,
+                      degree.min=degree.min,
+                      segments.min=segments.min,
                       j=NULL,
                       nrow.KI.mat=NULL,
                       t2=NULL,
@@ -60,7 +60,7 @@ frscv <- function(xz,
 
     n <- length(y)
     num.x <- NCOL(x)
-    
+
     if(NROW(y) != NROW(x)) stop(" x and y have differing numbers of observations")
 
     ## K is a matrix, column 1 degree, column 2 segments, either or
@@ -91,7 +91,7 @@ frscv <- function(xz,
                                    tau=tau,
                                    weights=weights,
                                    singular.ok=singular.ok)
-    
+
     ## Some i/o unless options(crs.messages=FALSE)
 
     ## Degree is first column of K K[,1], segments second column K[,2]
@@ -106,62 +106,62 @@ frscv <- function(xz,
     ## or both
 
     if(complexity=="degree") {
-      if(!is.null(j)) {
-        if(j==1) {
-          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
+        if(!is.null(j)) {
+            if(j==1) {
+                tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
+            } else {
+                dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
+                tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
+                               fw.format.2(as.numeric((t2-t1),units="mins")),
+                               "m",sep="")
+                tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
+            }
         } else {
-          dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
-          tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
-                         fw.format.2(as.numeric((t2-t1),units="mins")),
-                         "m",sep="")
-          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
+            tmp.1 <- paste("d[1]=", K[1,1],sep="")
         }
-      } else {
-        tmp.1 <- paste("d[1]=", K[1,1],sep="")
-      }
-      if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
+        if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
     } else if(complexity=="knots") {
-      if(!is.null(j)) {
-        if(j==1) {
-          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", s[1]=",K[1,2],sep="")
+        if(!is.null(j)) {
+            if(j==1) {
+                tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", s[1]=",K[1,2],sep="")
+            } else {
+                dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
+                tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
+                               fw.format.2(as.numeric((t2-t1),units="mins")),
+                               "m",sep="")
+                tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", s[1]=",K[1,2],sep="")
+            }
         } else {
-          dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
-          tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
-                         fw.format.2(as.numeric((t2-t1),units="mins")),
-                         "m",sep="")
-          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", s[1]=",K[1,2],sep="")
+            tmp.1 <- paste("s[1]=", K[1,2],sep="")
         }
-      } else {
-        tmp.1 <- paste("s[1]=", K[1,2],sep="")
-      }
-      if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
+        if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
     } else if(complexity=="degree-knots") {
-      if(!is.null(j)) {
-        if(j==1) {
-          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
+        if(!is.null(j)) {
+            if(j==1) {
+                tmp.1 <- paste("\r",j,"/",nrow.KI.mat,", d[1]=",K[1,1],sep="")
+            } else {
+                dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
+                tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
+                               fw.format.2(as.numeric((t2-t1),units="mins")),
+                               "m",sep="")
+                tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
+            }
         } else {
-          dt <- (t2-t1)*(nrow.KI.mat-j+1)/j
-          tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
-                         fw.format.2(as.numeric((t2-t1),units="mins")),
-                         "m",sep="")
-          tmp.1 <- paste("\r",j,"/",nrow.KI.mat,tmp.0,", d[1]=",K[1,1],sep="")
+            tmp.1 <- paste("k[1]=", K[1,1],sep="")
         }
-      } else {
-        tmp.1 <- paste("k[1]=", K[1,1],sep="")
-      }
-      if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
-      for(i in 1:num.x) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")      
+        if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
+        for(i in 1:num.x) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
     }
 
     ## For i/o for z variables...
-    
+
     if(num.z > 0) for(i in 1:num.z) tmp.1 <- paste(tmp.1, ", I[", i, "]=", I[i],sep="")
     tmp.3 <- paste(", cv=", format(cv,digits=6), sep="")
     if(num.restarts > 0) {
-      tmp.2 <- paste(", rs=", restart, "/", num.restarts,sep="")
-      msg <- paste(tmp.1,tmp.2,tmp.3,sep="")
+        tmp.2 <- paste(", rs=", restart, "/", num.restarts,sep="")
+        msg <- paste(tmp.1,tmp.2,tmp.3,sep="")
     } else {
-      msg <- paste(tmp.1,tmp.3,sep="")
+        msg <- paste(tmp.1,tmp.3,sep="")
     }
 
     console <<- printPush(msg,console = console)
@@ -195,7 +195,7 @@ frscv <- function(xz,
 
   if(complexity=="degree") {
       if(missing(segments)||is.null(segments)) stop("segments missing for cross-validation of spline degree")
-      if(length(segments)!=num.x) stop(" segments vector must be the same length as x")  
+      if(length(segments)!=num.x) stop(" segments vector must be the same length as x")
   } else if(complexity=="knots") {
       if(missing(degree)||is.null(degree)) stop("degree missing for cross-validation of number of spline knots")
       if(length(degree)!=num.x) stop(" degree vector must be the same length as x")
@@ -220,7 +220,7 @@ frscv <- function(xz,
     } else {
       KI.mat <- matrix.combn(K.vec1=degree.min:degree.max, K.vec2=segments.min:segments.max,num.x=num.x)
     }
-  ## We don't need to do the following again since we have specific values of segments. 
+  ## We don't need to do the following again since we have specific values of segments.
   ## KI.mat[,(num.x+1):(2*num.x)] <- KI.mat[,(num.x+1):(2*num.x)]+1
   } else if(complexity == "degree") {
     if(!is.null(z)) {
@@ -253,36 +253,36 @@ frscv <- function(xz,
   if(length(degree.zero.rows) > 0) {
 
     degree.mat.zero.rows.unique <- numeric()
-    
+
     if(num.z > 0) {
-      
+
       KI.I.unique <- unique(KI.mat[degree.zero.rows,(2*num.x+1):(2*num.x+num.z),drop=FALSE])
-      
+
       for(i in 1:nrow(KI.I.unique)) {
         degree.mat.zero.rows.unique[i] <- which(KI.mat[degree.zero.rows,(2*num.x+1):(2*num.x+num.z),drop=FALSE]==KI.I.unique[i,])[1]
       }
-      
+
     } else {
 
       KI.I.unique <- unique(KI.mat[degree.zero.rows,1:num.x,drop=FALSE])
-      
+
       for(i in 1:nrow(KI.I.unique)) {
         degree.mat.zero.rows.unique[i] <- which(KI.mat[degree.zero.rows,1:num.x,drop=FALSE]==KI.I.unique[i,])[1]
       }
-      
+
     }
-    
+
     degree.zero.rows <- degree.zero.rows[-degree.mat.zero.rows.unique]
-      
+
     if(length(degree.zero.rows) > 0) KI.mat <- KI.mat[-degree.zero.rows,,drop=FALSE]
-    
+
   }
 
   nrow.KI.mat <- NROW(KI.mat)
   basis.vec <- character(nrow.KI.mat)
   knots.vec <- character(nrow.KI.mat)
 
-  ## Initialize    
+  ## Initialize
 
   cv.vec <- rep(.Machine$double.xmax,nrow.KI.mat)
 
@@ -294,10 +294,10 @@ frscv <- function(xz,
                         x=x,
                         y=y,
                         z=z,
-                        degree.max=degree.max, 
-                        segments.max=segments.max, 
-                        degree.min=degree.min, 
-                        segments.min=segments.min, 
+                        degree.max=degree.max,
+                        segments.max=segments.max,
+                        degree.min=degree.min,
+                        segments.min=segments.min,
                         restart=0,
                         num.restarts=0,
                         j=j,
@@ -314,19 +314,19 @@ frscv <- function(xz,
 
       if(output < cv.vec[j]) {
         basis.vec[j] <- "additive"
-				knots.vec[j] <- attributes(output)$knots.opt
-				attributes(output) <- NULL
+        knots.vec[j] <- attributes(output)$knots.opt
+        attributes(output) <- NULL
         cv.vec[j] <- output
       }
-      
+
       output <- cv.objc(input=KI.mat[j,],
                         x=x,
                         y=y,
                         z=z,
-                        degree.max=degree.max, 
-                        segments.max=segments.max, 
-                        degree.min=degree.min, 
-                        segments.min=segments.min, 
+                        degree.max=degree.max,
+                        segments.max=segments.max,
+                        degree.min=degree.min,
+                        segments.min=segments.min,
                         restart=0,
                         num.restarts=0,
                         j=j,
@@ -343,8 +343,8 @@ frscv <- function(xz,
 
       if(output < cv.vec[j]) {
         basis.vec[j] <- "tensor"
-				knots.vec[j] <- attributes(output)$knots.opt
-				attributes(output) <- NULL
+        knots.vec[j] <- attributes(output)$knots.opt
+        attributes(output) <- NULL
         cv.vec[j] <- output
       }
 
@@ -352,10 +352,10 @@ frscv <- function(xz,
                         x=x,
                         y=y,
                         z=z,
-                        degree.max=degree.max, 
-                        segments.max=segments.max, 
-                        degree.min=degree.min, 
-                        segments.min=segments.min, 
+                        degree.max=degree.max,
+                        segments.max=segments.max,
+                        degree.min=degree.min,
+                        segments.min=segments.min,
                         restart=0,
                         num.restarts=0,
                         j=j,
@@ -372,8 +372,8 @@ frscv <- function(xz,
 
       if(output < cv.vec[j]) {
         basis.vec[j] <- "glp"
-				knots.vec[j] <- attributes(output)$knots.opt
-				attributes(output) <- NULL
+        knots.vec[j] <- attributes(output)$knots.opt
+        attributes(output) <- NULL
         cv.vec[j] <- output
       }
 
@@ -385,10 +385,10 @@ frscv <- function(xz,
                         x=x,
                         y=y,
                         z=z,
-                        degree.max=degree.max, 
-                        segments.max=segments.max, 
-                        degree.min=degree.min, 
-                        segments.min=segments.min, 
+                        degree.max=degree.max,
+                        segments.max=segments.max,
+                        degree.min=degree.min,
+                        segments.min=segments.min,
                         restart=0,
                         num.restarts=0,
                         j=j,
@@ -405,11 +405,11 @@ frscv <- function(xz,
 
       if(output < cv.vec[j]) {
         basis.vec[j] <- basis
-				knots.vec[j] <- attributes(output)$knots.opt
-				attributes(output) <- NULL
+        knots.vec[j] <- attributes(output)$knots.opt
+        attributes(output) <- NULL
         cv.vec[j] <- output
       }
-      
+
     }
 
   }
@@ -421,7 +421,7 @@ frscv <- function(xz,
   cv.min <- cv.vec[ocv.vec][1]
   K.opt <- KI.mat[ocv.vec,,drop=FALSE][1,]
   basis.opt <- basis.vec[ocv.vec][1]
-	knots.opt <- knots.vec[ocv.vec][1]
+  knots.opt <- knots.vec[ocv.vec][1]
   degree <- K.opt[1:num.x]
   segments <- K.opt[(num.x+1):(2*num.x)]
 
@@ -435,7 +435,7 @@ frscv <- function(xz,
   segments[degree==0] <- 1
 
   if(any(degree==degree.max)) warning(paste(" optimal degree equals search maximum (", degree.max,"): rerun with larger degree.max",sep=""))
-  if(any(segments==segments.max)) warning(paste(" optimal segment equals search maximum (", segments.max,"): rerun with larger segments.max",sep=""))  
+  if(any(segments==segments.max)) warning(paste(" optimal segment equals search maximum (", segments.max,"): rerun with larger segments.max",sep=""))
 
   if(is.null(z)) I.opt <- NULL
 
@@ -443,10 +443,10 @@ frscv <- function(xz,
         I=I.opt,
         basis=basis.opt,
         basis.vec=basis.vec,
-        degree.max=degree.max, 
-        segments.max=segments.max, 
-        degree.min=degree.min, 
-        segments.min=segments.min, 
+        degree.max=degree.max,
+        segments.max=segments.max,
+        degree.min=degree.min,
+        segments.min=segments.min,
         complexity=complexity,
         knots=knots.opt,
         degree=degree,

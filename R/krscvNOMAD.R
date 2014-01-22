@@ -32,6 +32,7 @@ krscvNOMAD <- function(xz,
                        min.mesh.size.integer=paste("r",sqrt(.Machine$double.eps),sep=""),
                        min.poll.size.real=paste("r",sqrt(.Machine$double.eps),sep=""),
                        min.poll.size.integer=paste("r",sqrt(.Machine$double.eps),sep=""),
+                       opts=list(),
                        nmulti=0,
                        tau=NULL,
                        weights=NULL,
@@ -57,6 +58,11 @@ krscvNOMAD <- function(xz,
         lambda.discrete.num <- as.integer(lambda.discrete.num)
         if(lambda.discrete.num < 1) lambda.discrete.num <- 10
     }
+
+    ## Set DISPLAY_DEGREE to 0 if crs.messages=FALSE and
+    ## DISPLAY_DEGREE is not provided
+
+    if(!options('crs.messages')$crs.messages && is.null(opts[["DISPLAY_DEGREE"]])) opts$"DISPLAY_DEGREE"=0
 
     t1 <- Sys.time()
 
@@ -247,6 +253,7 @@ krscvNOMAD <- function(xz,
             console <- printPush(paste("\rfv = ",format(cv)," ", sep=""),console = console)
 
             return(cv)
+
         }
 
         ##generate params
@@ -454,7 +461,6 @@ krscvNOMAD <- function(xz,
             segments <- NULL
     }
 
-    opts <- list()
     INITIAL.MESH.SIZE <- list()
     MIN.MESH.SIZE <- list()
     MIN.POLL.SIZE <- list()
@@ -499,6 +505,7 @@ krscvNOMAD <- function(xz,
     if(degree.max < 1 || segments.max < 1 ) stop(" degree.max or segments.max must be greater than or equal to 1")
 
     print.output <- FALSE
+
     console <- newLineConsole()
     if(!is.null(opts$DISPLAY_DEGREE)){
         if(opts$DISPLAY_DEGREE>0){
@@ -510,7 +517,7 @@ krscvNOMAD <- function(xz,
         print.output <-TRUE
         console <- printPush("Calling NOMAD (Nonsmooth Optimization by Mesh Adaptive Direct Search)\n",console = console)
     }
-
+    
     ## solve by NOMAD
     nomad.solution<-cv.nomad(x,
                              y,

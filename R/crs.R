@@ -409,6 +409,7 @@ crs.formula <- function(formula,
                         min.mesh.size.integer=paste(sqrt(.Machine$double.eps)),
                         min.poll.size.real=paste(sqrt(.Machine$double.eps)),
                         min.poll.size.integer=paste(sqrt(.Machine$double.eps)),
+                        opts=list(),
                         nmulti=5,
                         tau=NULL,
                         weights=NULL,
@@ -429,6 +430,11 @@ crs.formula <- function(formula,
   mt <- attr(mf, "terms")
   y <- model.response(mf)
   xz <- mf[, attr(attr(mf, "terms"),"term.labels"), drop = FALSE]
+
+  ## Set DISPLAY_DEGREE to 0 if crs.messages=FALSE and DISPLAY_DEGREE
+  ## is not provided
+
+  if(!options('crs.messages')$crs.messages && is.null(opts[["DISPLAY_DEGREE"]])) opts$"DISPLAY_DEGREE"=0
 
   ## If a weights vector is provided and there exists missing data
   ## then the weight vector must be parsed to contain weights
@@ -561,6 +567,7 @@ crs.formula <- function(formula,
                                                        initial.mesh.size.integer=initial.mesh.size.integer,
                                                        min.mesh.size.integer=min.mesh.size.integer,
                                                        min.poll.size.integer=min.poll.size.integer,
+                                                       opts=opts,
                                                        nmulti=nmulti,
                                                        tau=tau,
                                                        weights=weights,
@@ -630,6 +637,7 @@ crs.formula <- function(formula,
                                                        min.mesh.size.integer=min.mesh.size.integer,
                                                        min.poll.size.real=min.poll.size.real,
                                                        min.poll.size.integer=min.poll.size.integer,
+                                                       opts=opts,
                                                        nmulti=nmulti,
                                                        tau=tau,
                                                        weights=weights,

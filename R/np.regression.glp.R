@@ -291,6 +291,7 @@ npglpreg.default <- function(tydat=NULL,
                              gradient.vec=NULL,
                              gradient.categorical=FALSE,
                              cv.shrink=TRUE,
+                             cv.maxPenalty=sqrt(.Machine$double.xmax),
                              cv.warning=FALSE,
                              Bernstein=TRUE,
                              mpi=FALSE,
@@ -449,9 +450,9 @@ summary.npglpreg <- function(object,
 
   cat(paste("\nBandwidth type: ", object$bwtype, sep=""))
 
-  if(object$num.numeric >= 1) { 
+  if(object$num.numeric >= 1) {
     cat(paste("\nContinuous kernel type: ", object$ckertype, sep=""))
-    cat(paste("\nContinuous kernel order: ", object$ckerorder, sep=""))       
+    cat(paste("\nContinuous kernel order: ", object$ckerorder, sep=""))
     for(j in 1:object$num.numeric) {
       if(object$bwtype=="fixed") {
         cat(paste("\nBandwidth for ",format(object$xnames[object$numeric.index][j]),": ",format(object$bws[object$numeric.index][j]),sep=""),sep="")
@@ -476,11 +477,10 @@ summary.npglpreg <- function(object,
 
   if(object$num.categorical >= 1) {
     cat(paste("\nUnordered kernel type: ", object$ukertype, sep=""))
-    cat(paste("\nOrdered kernel type: ", object$okertype, sep=""))    
+    cat(paste("\nOrdered kernel type: ", object$okertype, sep=""))
     for(j in 1:(object$num.categorical))
       cat(paste("\nBandwidth for ",format(object$xnames[object$categorical.index][j]),": ",format(object$bws[object$categorical.index][j]),sep=""),sep="")
   }
-
 
   ## Summary statistics
 
@@ -597,7 +597,7 @@ npglpreg.formula <- function(formula,
                              okertype=c("liracine","wangvanryzin"),
                              bwtype = c("fixed","generalized_nn","adaptive_nn","auto"),
                              cv=c("degree-bandwidth","bandwidth","none"),
-                             cv.func=c("cv.ls","cv.gcv","cv.aic"),
+                             cv.func=c("cv.ls","cv.aic"),
                              nmulti=5,
                              random.seed=42,
                              degree.max=10,
@@ -606,20 +606,27 @@ npglpreg.formula <- function(formula,
                              bandwidth.min=sqrt(.Machine$double.eps),
                              bandwidth.min.numeric=1.0e-02,
                              bandwidth.switch=1.0e+06,
+                             bandwidth.scale.categorical=1.0e+04,
                              max.bb.eval=10000,
-                             initial.mesh.size.real="1",
-                             initial.mesh.size.integer="1",
-                             min.mesh.size.real="1.0e-05",
-                             min.mesh.size.integer="1.0e-05",
-                             min.poll.size.real="1.0e-08",
-                             min.poll.size.integer="1.0e-08",
+                             min.epsilon=.Machine$double.eps,
+                             initial.mesh.size.real=1,
+                             initial.mesh.size.integer=1,
+                             min.mesh.size.real=sqrt(.Machine$double.eps),
+                             min.mesh.size.integer=sqrt(.Machine$double.eps),
+                             min.poll.size.real=sqrt(.Machine$double.eps),
+                             min.poll.size.integer=sqrt(.Machine$double.eps),
+                             opts=list(),
+                             restart.from.min=FALSE,
                              gradient.vec=NULL,
                              gradient.categorical=FALSE,
                              cv.shrink=TRUE,
+                             cv.maxPenalty=sqrt(.Machine$double.xmax),
                              cv.warning=FALSE,
                              Bernstein=TRUE,
                              mpi=FALSE,
                              ...) {
+
+  ## Basic error trapping...
 
   if(!is.logical(mpi)) stop(" Error: mpi must be logical (TRUE/FALSE)")
   if(!is.logical(Bernstein)) stop(" Error: Bernstein must be logical (TRUE/FALSE)")
@@ -628,18 +635,41 @@ npglpreg.formula <- function(formula,
   if(!is.logical(leave.one.out)) stop(" Error: leave.one.out must be logical (TRUE/FALSE)")
   if(degree.max > 100) stop(paste(" degree.max (",degree.max,") exceeds reasonable value (",100,")",sep=""))
   if(degree.max < 1) stop(paste(" degree.max (",degree.max,") must be a positive integer",sep=""))
+  if(degree.max < degree.min) stop(" degree.max must be greater than or equal to degree.min")
+  if(as.numeric(initial.mesh.size.real) <= 0) stop(" initial.mesh.size.real must be positive")
+  if(as.numeric(initial.mesh.size.integer) <= 0) stop(" initial.mesh.size.integer must be positive")
+  if(as.numeric(min.mesh.size.integer) <= 0) stop(" min.mesh.size.integer must be positive")
+  if(as.numeric(min.mesh.size.real) <= 0) stop(" min.mesh.size.real must be positive")
+  if(as.numeric(min.poll.size.integer) <= 0) stop(" min.poll.size.integer must be positive")
+  if(as.numeric(min.poll.size.real) <= 0) stop(" min.poll.size.real must be positive")
+  if(as.numeric(bandwidth.scale.categorical) <= 0) stop(" bandwidth.scale.categorical must be positive")
+  if(as.numeric(bandwidth.min) <= 0) stop(" bandwidth.min must be positive")
+  if(as.numeric(bandwidth.min.numeric) <= 0) stop(" bandwidth.min.numeric must be positive")
+  if(as.numeric(bandwidth.switch) <= 0) stop(" bandwidth.switch must be positive")
+  if(as.numeric(bandwidth.max) <= 0) stop(" bandwidth.max must be positive")
+  if(as.numeric(bandwidth.max) <= as.numeric(bandwidth.min)) stop(" bandwidth.max must exceed bandwidth.min")
+  if(as.numeric(min.epsilon) <= 0) stop(" min.epsilon must be positive")
+  if(as.numeric(min.epsilon) >= as.numeric(min.mesh.size.real)) stop(" min.epsilon must be less than min.mesh.size.real")
+  if(as.numeric(min.epsilon) >= as.numeric(min.mesh.size.integer)) stop(" min.epsilon must be less than min.mesh.size.integer")
+  if(as.numeric(min.epsilon) >= as.numeric(min.poll.size.real)) stop(" min.epsilon must be less than min.poll.size.real")
+  if(as.numeric(min.epsilon) >= as.numeric(min.poll.size.integer)) stop(" min.epsilon must be less than min.poll.size.integer")
+  if(as.numeric(max.bb.eval) <= 0) stop(" max.bb.eval must be positive")
   if(!mpi) {
     if(!require(np)) stop(" Error: you must install the np package to use this function")
   } else {
     if(!require(npRmpi)) stop(" Error: you must install the npRmpi package to use this function")
   }
+  ## Set DISPLAY_DEGREE to 0 if crs.messages=FALSE and DISPLAY_DEGREE
+  ## is not provided
+
+  if(!options('crs.messages')$crs.messages && is.null(opts[["DISPLAY_DEGREE"]])) opts$"DISPLAY_DEGREE"=0
 
   ckertype <- match.arg(ckertype)
   ukertype <- match.arg(ukertype)
   okertype <- match.arg(okertype)
   bwtype <- match.arg(bwtype)
   if(!any(ckerorder==c(2,4,6,8))) stop("ckerorder must be 2, 4, 6, or 8")
-  
+
   cv <- match.arg(cv)
   cv.func <- match.arg(cv.func)
 
@@ -678,14 +708,19 @@ npglpreg.formula <- function(formula,
                                                      bandwidth.min=bandwidth.min,
                                                      bandwidth.min.numeric=bandwidth.min.numeric,
                                                      bandwidth.switch=bandwidth.switch,
+                                                     bandwidth.scale.categorical=bandwidth.scale.categorical,
                                                      max.bb.eval=max.bb.eval,
+                                                     min.epsilon=min.epsilon,
                                                      initial.mesh.size.real=initial.mesh.size.real,
                                                      initial.mesh.size.integer=initial.mesh.size.integer,
                                                      min.mesh.size.real=min.mesh.size.real,
                                                      min.mesh.size.integer=min.mesh.size.integer,
                                                      min.poll.size.real=min.poll.size.real,
                                                      min.poll.size.integer=min.poll.size.integer,
+                                                     opts=opts,
+                                                     restart.from.min=restart.from.min,
                                                      cv.shrink=cv.shrink,
+                                                     cv.maxPenalty=cv.maxPenalty,
                                                      cv.warning=cv.warning,
                                                      Bernstein=Bernstein,
                                                      mpi=mpi,
@@ -710,14 +745,19 @@ npglpreg.formula <- function(formula,
                                                      bandwidth.min=bandwidth.min,
                                                      bandwidth.min.numeric=bandwidth.min.numeric,
                                                      bandwidth.switch=bandwidth.switch,
+                                                     bandwidth.scale.categorical=bandwidth.scale.categorical,
                                                      max.bb.eval=max.bb.eval,
+                                                     min.epsilon=min.epsilon,
                                                      initial.mesh.size.real=initial.mesh.size.real,
                                                      initial.mesh.size.integer=initial.mesh.size.integer,
                                                      min.mesh.size.real=min.mesh.size.real,
                                                      min.mesh.size.integer=min.mesh.size.integer,
                                                      min.poll.size.real=min.poll.size.real,
                                                      min.poll.size.integer=min.poll.size.integer,
+                                                     opts=opts,
+                                                     restart.from.min=restart.from.min,
                                                      cv.shrink=cv.shrink,
+                                                     cv.maxPenalty=cv.maxPenalty,
                                                      cv.warning=cv.warning,
                                                      Bernstein=Bernstein,
                                                      mpi=mpi,
@@ -745,14 +785,19 @@ npglpreg.formula <- function(formula,
                                                   bandwidth.min=bandwidth.min,
                                                   bandwidth.min.numeric=bandwidth.min.numeric,
                                                   bandwidth.switch=bandwidth.switch,
+                                                  bandwidth.scale.categorical=bandwidth.scale.categorical,
                                                   max.bb.eval=max.bb.eval,
+                                                  min.epsilon=min.epsilon,
                                                   initial.mesh.size.real=initial.mesh.size.real,
                                                   initial.mesh.size.integer=initial.mesh.size.integer,
                                                   min.mesh.size.real=min.mesh.size.real,
                                                   min.mesh.size.integer=min.mesh.size.integer,
                                                   min.poll.size.real=min.poll.size.real,
                                                   min.poll.size.integer=min.poll.size.integer,
+                                                  opts=opts,
+                                                  restart.from.min=restart.from.min,
                                                   cv.shrink=cv.shrink,
+                                                  cv.maxPenalty=cv.maxPenalty,
                                                   cv.warning=cv.warning,
                                                   Bernstein=Bernstein,
                                                   mpi=mpi,
@@ -782,14 +827,19 @@ npglpreg.formula <- function(formula,
                                                   bandwidth.min=bandwidth.min,
                                                   bandwidth.min.numeric=bandwidth.min.numeric,
                                                   bandwidth.switch=bandwidth.switch,
+                                                  bandwidth.scale.categorical=bandwidth.scale.categorical,
                                                   max.bb.eval=max.bb.eval,
+                                                  min.epsilon=min.epsilon,
                                                   initial.mesh.size.real=initial.mesh.size.real,
                                                   initial.mesh.size.integer=initial.mesh.size.integer,
                                                   min.mesh.size.real=min.mesh.size.real,
                                                   min.mesh.size.integer=min.mesh.size.integer,
                                                   min.poll.size.real=min.poll.size.real,
                                                   min.poll.size.integer=min.poll.size.integer,
+                                                  opts=opts,
+                                                  restart.from.min=restart.from.min,
                                                   cv.shrink=cv.shrink,
+                                                  cv.maxPenalty=cv.maxPenalty,
                                                   cv.warning=cv.warning,
                                                   Bernstein=Bernstein,
                                                   mpi=mpi,
@@ -805,7 +855,7 @@ npglpreg.formula <- function(formula,
     bws <- model.cv$bws
     bws.sf <- model.cv$bws.sf
     fv <- model.cv$fv
-    if(isTRUE(all.equal(fv,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with larger nmulti or smaller degree.max (or degree if provided)")
+    if(isTRUE(all.equal(fv,cv.maxPenalty))) stop(" Search failed: restart with larger nmulti or smaller degree.max (or degree if provided)")
   }
 
   if(!is.null(degree))    {
@@ -829,11 +879,11 @@ npglpreg.formula <- function(formula,
                                                    gradient.vec=gradient.vec,
                                                    gradient.categorical=gradient.categorical,
                                                    cv.shrink=TRUE, ## Must override cv.shrink here
+                                                   cv.maxPenalty=cv.maxPenalty,
                                                    cv.warning=cv.warning,
                                                    Bernstein=Bernstein,
                                                    mpi=mpi,
                                                    ...))
-
 
   est$call <- match.call()
   est$formula <- formula
@@ -864,6 +914,7 @@ glpregEst <- function(tydat=NULL,
                       bwtype=c("fixed","generalized_nn","adaptive_nn"),
                       gradient.vec=NULL,
                       cv.shrink=TRUE,
+                      cv.maxPenalty=sqrt(.Machine$double.xmax),
                       cv.warning=FALSE,
                       Bernstein=TRUE,
                       ...) {
@@ -889,8 +940,6 @@ glpregEst <- function(tydat=NULL,
   txdat <- as.data.frame(txdat)
   exdat <- as.data.frame(exdat)
 
-  maxPenalty <- sqrt(.Machine$double.xmax)
-
   n.train <- nrow(txdat)
   n.eval <- nrow(exdat)
 
@@ -899,6 +948,8 @@ glpregEst <- function(tydat=NULL,
   numeric.index <- which(xdat.numeric==TRUE)
   num.numeric <- sum(sapply(1:NCOL(txdat),function(i){is.numeric(txdat[,i])})==TRUE)
   num.categorical <- NCOL(txdat)-num.numeric
+
+  if(num.numeric == 0) stop("generalized local polynomial regression requires at least one numeric predictor")
 
   ## Test for invalid knn values
 
@@ -956,14 +1007,13 @@ glpregEst <- function(tydat=NULL,
                     bandwidth.divide = TRUE,
                     leave.one.out = leave.one.out,
                     ckertype = ckertype,
-                    ckerorder=ckerorder,
+                    ckerorder = ckerorder,
                     ukertype = ukertype,
                     okertype = okertype,
                     bwtype = bwtype,
                     ...)$ksum
 
     }
-
 
     ## Note that as bandwidth approaches zero the local constant
     ## estimator undersmooths and approaches each sample realization,
@@ -1083,7 +1133,7 @@ glpregEst <- function(tydat=NULL,
       for(i in 1:n.eval) {
         if(!is.fullrank(tww[,,i])) {
           if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
-          return(maxPenalty)
+          return(cv.maxPenalty)
         }
       }
     }
@@ -1096,7 +1146,7 @@ glpregEst <- function(tydat=NULL,
       tww <- array(tww,dim = c(ncol(W),ncol(W),n.eval))
     }
 
-    coef.mat <- matrix(maxPenalty,ncol(W),n.eval)
+    coef.mat <- matrix(cv.maxPenalty,ncol(W),n.eval)
     epsilon <- 1.0/n.eval
     ridge <- double(n.eval)
     doridge <- !logical(n.eval)
@@ -1112,7 +1162,7 @@ glpregEst <- function(tydat=NULL,
                  ridge[i] <<- ridge[i]+epsilon
                  doridge[i] <<- TRUE
                  if(cv.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
-                 return(rep(maxPenalty,nc))
+                 return(rep(cv.maxPenalty,nc))
                })
     }
 
@@ -1160,7 +1210,9 @@ glpregEst <- function(tydat=NULL,
 
 }
 
-## Could we just call glpregEst within (here and cv.aic?)
+## Create the function wrappers to be fed to the snomadr solver for
+## leave-one-out cross-validation and Hurvich, Simonoff, and Tsai's
+## AIC_c approach
 
 minimand.cv.ls <- function(bws=NULL,
                            ydat=NULL,
@@ -1171,9 +1223,11 @@ minimand.cv.ls <- function(bws=NULL,
                            ckerorder=2,
                            ukertype=c("liracine","aitchisonaitken"),
                            okertype=c("liracine","wangvanryzin"),
-                           bwtype = c("fixed","generalized_nn","adaptive_nn"),
+                           bwtype=c("fixed","generalized_nn","adaptive_nn"),
                            cv.shrink=TRUE,
+                           cv.maxPenalty=sqrt(.Machine$double.xmax),
                            cv.warning=FALSE,
+                           bandwidth.scale.categorical=NULL,
                            ...) {
 
   ckertype <- match.arg(ckertype)
@@ -1192,7 +1246,21 @@ minimand.cv.ls <- function(bws=NULL,
 
   n <- length(ydat)
 
-  maxPenalty <- sqrt(.Machine$double.xmax)
+  ## Manually conduct bandwidth scaling so that NOMAD is operating on
+  ## a scale free level.
+
+  num.bw <- ncol(xdat)
+  xdat.numeric <- sapply(1:num.bw,function(i){is.numeric(xdat[,i])})
+  num.numeric <- ncol(as.data.frame(xdat[,xdat.numeric]))
+
+  for(i in 1:num.bw) {
+    if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
+      bws[i] <- bws[i]*sd.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)}
+    }
+    if(xdat.numeric[i]!=TRUE) {
+      bws[i] <- bws[i]/bandwidth.scale.categorical
+    }
+  }
 
   console <- newLineConsole()
   console <- printClear(console)
@@ -1202,18 +1270,18 @@ minimand.cv.ls <- function(bws=NULL,
     ## Check for positive degrees of freedom
     if(ncol(W) >= nrow(W)-1) {
       if(cv.warning) console <- printPush(paste("\rWarning: negative degrees of freedom                           ",sep=""),console = console)
-      return(maxPenalty)
+      return(cv.maxPenalty)
     }
     ## Check for full column rank
     if(!is.fullrank(W)) {
       if(cv.warning) console <- printPush(paste("\rWarning: negative degrees of freedom                           ",sep=""),console = console)
-      return(maxPenalty)
+      return(cv.maxPenalty)
     }
   }
 
   if(any(bws<=0)) {
 
-    return(maxPenalty)
+    return(cv.maxPenalty)
 
   } else {
 
@@ -1227,7 +1295,6 @@ minimand.cv.ls <- function(bws=NULL,
                     bws = bws,
                     leave.one.out = TRUE,
                     bandwidth.divide = TRUE,
-                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1237,13 +1304,13 @@ minimand.cv.ls <- function(bws=NULL,
 
       mean.loo <- tww[2,]/NZD(tww[1,])
 
-      if (!any(mean.loo == maxPenalty)){
+      if (!any(mean.loo == cv.maxPenalty)){
         fv <- mean((ydat-mean.loo)^2)
       } else {
-        fv <- maxPenalty
+        fv <- cv.maxPenalty
       }
 
-      fv <- ifelse(is.finite(fv),fv,maxPenalty)
+      fv <- ifelse(is.finite(fv),fv,cv.maxPenalty)
 
       console <- printPush("\r                                                                         ",console = console)
       console <- printPush(paste("\rfv = ",format(fv)," ",sep=""),console = console)
@@ -1261,7 +1328,6 @@ minimand.cv.ls <- function(bws=NULL,
                     bws = bws,
                     leave.one.out = TRUE,
                     bandwidth.divide = TRUE,
-                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1281,12 +1347,12 @@ minimand.cv.ls <- function(bws=NULL,
         for(i in 1:n) {
           if(!is.fullrank(tww[,,i])) {
             if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
-            return(maxPenalty)
+            return(cv.maxPenalty)
           }
         }
       }
 
-      mean.loo <- rep(maxPenalty,n)
+      mean.loo <- rep(cv.maxPenalty,n)
       epsilon <- 1.0/n
       ridge <- double(n)
       doridge <- !logical(n)
@@ -1305,7 +1371,7 @@ minimand.cv.ls <- function(bws=NULL,
                   ridge[i] <<- ridge[i]+epsilon
                   doridge[i] <<- TRUE
                   if(cv.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
-                  return(rep(maxPenalty,nc))
+                  return(rep(cv.maxPenalty,nc))
                 })
       }
 
@@ -1314,13 +1380,13 @@ minimand.cv.ls <- function(bws=NULL,
         mean.loo[iloo] <- sapply(iloo, ridger)
       }
 
-      if (!any(mean.loo == maxPenalty)){
+      if (!any(mean.loo == cv.maxPenalty)){
         fv <- mean((ydat-mean.loo)^2)
       } else {
-        fv <- maxPenalty
+        fv <- cv.maxPenalty
       }
 
-      fv <- ifelse(is.finite(fv),fv,maxPenalty)
+      fv <- ifelse(is.finite(fv),fv,cv.maxPenalty)
 
       console <- printPush("\r                                                                         ",console = console)
       console <- printPush(paste("\rfv = ",format(fv)," ",sep=""),console = console)
@@ -1344,7 +1410,9 @@ minimand.cv.aic <- function(bws=NULL,
                             okertype=c("liracine","wangvanryzin"),
                             bwtype = c("fixed","generalized_nn","adaptive_nn"),
                             cv.shrink=TRUE,
+                            cv.maxPenalty=sqrt(.Machine$double.xmax),
                             cv.warning=FALSE,
+                            bandwidth.scale.categorical=NULL,
                             ...) {
 
   ckertype <- match.arg(ckertype)
@@ -1363,18 +1431,32 @@ minimand.cv.aic <- function(bws=NULL,
 
   n <- length(ydat)
 
-  maxPenalty <- sqrt(.Machine$double.xmax)
-
   if(!is.null(W)) {
     ## Check for positive degrees of freedom
     if(ncol(W) >= nrow(W)-1) {
       if(cv.warning) console <- printPush(paste("\rWarning: negative degrees of freedom                           ",sep=""),console = console)
-      return(maxPenalty)
+      return(cv.maxPenalty)
     }
     ## Check for full column rank
     if(!is.fullrank(W)) {
       if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
-      return(maxPenalty)
+      return(cv.maxPenalty)
+    }
+  }
+
+  ## Manually conduct bandwidth scaling so that NOMAD is operating on
+  ## a scale free level.
+
+  num.bw <- ncol(xdat)
+  xdat.numeric <- sapply(1:num.bw,function(i){is.numeric(xdat[,i])})
+  num.numeric <- ncol(as.data.frame(xdat[,xdat.numeric]))
+
+  for(i in 1:num.bw) {
+    if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
+      bws[i] <- bws[i]*sd.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)}
+    }
+    if(xdat.numeric[i]!=TRUE) {
+      bws[i] <- bws[i]/bandwidth.scale.categorical
     }
   }
 
@@ -1384,7 +1466,7 @@ minimand.cv.aic <- function(bws=NULL,
 
   if(any(bws<=0)) {
 
-    return(maxPenalty)
+    return(cv.maxPenalty)
 
   } else {
 
@@ -1395,7 +1477,6 @@ minimand.cv.aic <- function(bws=NULL,
                             tydat = 1,
                             bws = bws,
                             bandwidth.divide = TRUE,
-                            bwscaling = TRUE,
                             ckertype = ckertype,
                             ckerorder=ckerorder,
                             ukertype = ukertype,
@@ -1412,7 +1493,6 @@ minimand.cv.aic <- function(bws=NULL,
                     tydat = rep(1,n),
                     bws = bws,
                     bandwidth.divide = TRUE,
-                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1426,13 +1506,13 @@ minimand.cv.aic <- function(bws=NULL,
 
       aic.penalty <- (1+trH/n)/(1-(trH+2)/n)
 
-      if (!any(ghat == maxPenalty) && (aic.penalty > 0)){
+      if (!any(ghat == cv.maxPenalty) && (aic.penalty > 0)){
         fv <- log(mean((ydat-ghat)^2)) + aic.penalty
       } else {
-        fv <- maxPenalty
+        fv <- cv.maxPenalty
       }
 
-      return(ifelse(is.finite(fv),fv,maxPenalty))
+      return(ifelse(is.finite(fv),fv,cv.maxPenalty))
 
     } else {
 
@@ -1444,7 +1524,6 @@ minimand.cv.aic <- function(bws=NULL,
                     weights = W,
                     bws = bws,
                     bandwidth.divide = TRUE,
-                    bwscaling = TRUE,
                     ckertype = ckertype,
                     ckerorder=ckerorder,
                     ukertype = ukertype,
@@ -1464,12 +1543,12 @@ minimand.cv.aic <- function(bws=NULL,
         for(i in 1:n) {
           if(!is.fullrank(tww[,,i])) {
             if(cv.warning) console <- printPush(paste("\rWarning: is.fullrank required for inversion at obs. ", i," failed      ",sep=""),console = console)
-            return(maxPenalty)
+            return(cv.maxPenalty)
           }
         }
       }
 
-      ghat <- rep(maxPenalty,n)
+      ghat <- rep(cv.maxPenalty,n)
       epsilon <- 1.0/n
       ridge <- double(n)
       doridge <- !logical(n)
@@ -1488,7 +1567,7 @@ minimand.cv.aic <- function(bws=NULL,
                   ridge[i] <<- ridge[i]+epsilon
                   doridge[i] <<- TRUE
                   if(cv.warning) console <- printPush(paste("\rWarning: ridging required for inversion at obs. ", i, ", ridge = ",formatC(ridge[i],digits=4,format="f"),"        ",sep=""),console = console)
-                  return(rep(maxPenalty,nc))
+                  return(rep(cv.maxPenalty,nc))
                 })
       }
 
@@ -1498,16 +1577,18 @@ minimand.cv.aic <- function(bws=NULL,
       }
 
       trH <- kernel.i.eq.j*sum(sapply(1:n,function(i){
-        W[i,, drop = FALSE] %*% solve(tww[,,i]+diag(rep(ridge[i],nc)),tol=.Machine$double.eps) %*% t(W[i,, drop = FALSE])
+        W[i,, drop = FALSE] %*% chol2inv(chol(tww[,,i]+diag(rep(ridge[i],nc)))) %*% t(W[i,, drop = FALSE])
       }))
 
-      if (!any(ghat == maxPenalty)){
-        fv <- log(mean((ydat-ghat)^2)) + (1+trH/n)/(1-(trH+2)/n)
+      aic.penalty <- (1+trH/n)/(1-(trH+2)/n)
+
+      if (!any(ghat == cv.maxPenalty) && (aic.penalty > 0)){
+        fv <- log(mean((ydat-ghat)^2)) + aic.penalty
       } else {
-        fv <- maxPenalty
+        fv <- cv.maxPenalty
       }
 
-      fv <- ifelse(is.finite(fv),fv,maxPenalty)
+      fv <- ifelse(is.finite(fv),fv,cv.maxPenalty)
 
       console <- printPush("\r                                                                         ",console = console)
       console <- printPush(paste("\rfv = ",format(fv)," ",sep=""),console = console)
@@ -1520,285 +1601,12 @@ minimand.cv.aic <- function(bws=NULL,
 
 }
 
-glpcv <- function(ydat=NULL,
-                  xdat=NULL,
-                  degree=NULL,
-                  bwmethod=c("cv.ls","cv.aic"),
-                  ckertype=c("gaussian", "epanechnikov","uniform","truncated gaussian"),
-                  ckerorder=2,
-                  ukertype=c("liracine","aitchisonaitken"),
-                  okertype=c("liracine","wangvanryzin"),
-                  bwtype = c("fixed","generalized_nn","adaptive_nn"),
-                  nmulti=NULL,
-                  random.seed=42,
-                  optim.maxattempts = 10,
-                  optim.method=c("Nelder-Mead", "BFGS", "CG"),
-                  optim.reltol=sqrt(.Machine$double.eps),
-                  optim.abstol=.Machine$double.eps,
-                  optim.maxit=500,
-                  debug=FALSE,
-                  Bernstein=TRUE,
-                  ...) {
-
-  ## Save seed prior to setting
-
-  if(exists(".Random.seed", .GlobalEnv)) {
-    save.seed <- get(".Random.seed", .GlobalEnv)
-    exists.seed = TRUE
-  } else {
-    exists.seed = FALSE
-  }
-
-  set.seed(random.seed)
-
-  if(debug) system("rm optim.debug bandwidth.out optim.out")
-
-  if(is.null(ydat)) stop(" Error: You must provide y data")
-  if(is.null(xdat)) stop(" Error: You must provide X data")
-  if(is.null(degree) || any(degree < 0)) stop(paste(" Error: degree vector must contain non-negative integers\ndegree is (", degree, ")\n",sep=""))
-  if(!is.null(nmulti) && nmulti < 1) stop(paste(" Error: nmulti must be a positive integer (minimum 1)\nnmulti is (", nmulti, ")\n",sep=""))
-
-  bwmethod <- match.arg(bwmethod)
-
-  ckertype <- match.arg(ckertype)
-  ukertype <- match.arg(ukertype)
-  okertype <- match.arg(okertype)
-  bwtype <- match.arg(bwtype)
-  if(!any(ckerorder==c(2,4,6,8))) stop("ckerorder must be 2, 4, 6, or 8")
-
-  optim.method <- match.arg(optim.method)
-  optim.control <- list(abstol = optim.abstol,
-                        reltol = optim.reltol,
-                        maxit = optim.maxit)
-
-  maxPenalty <- sqrt(.Machine$double.xmax)
-
-  xdat <- as.data.frame(xdat)
-
-  num.bw <- ncol(xdat)
-
-  if(is.null(nmulti)) nmulti <- min(5,num.bw)
-
-  ## Which variables are categorical, which are discrete...
-
-  xdat.numeric <- sapply(1:ncol(xdat),function(i){is.numeric(xdat[,i])})
-
-  ## First initialize initial search values of the vector of
-  ## bandwidths to lie in [0,1]
-
-  if(debug) write(c("cv",paste(rep("x",num.bw),seq(1:num.bw),sep="")),file="optim.debug",ncolumns=(num.bw+1))
-
-  if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>ncol(xdat)-1)
-    return(maxPenalty)
-
-  ## Pass in the local polynomial weight matrix rather than
-  ## recomputing with each iteration.
-
-  W <- W.glp(xdat=xdat,
-             degree=degree,
-             Bernstein=Bernstein)
-
-  ## Check for positive degrees of freedom
-
-  if(ncol(W) >= nrow(W)-1)
-    return(maxPenalty)
-
-  ## Check for full column rank
-
-  if(!is.fullrank(W))
-    return(maxPenalty)
-
-  sum.lscv <- function(bw.gamma,...) {
-
-    ## Note - we set the kernel for unordered and ordered regressors
-    ## to the liracine kernel (0<=lambda<=1) and test for proper
-    ## bounds in sum.lscv.
-
-    if(all(bw.gamma>=0)&&all(bw.gamma[!xdat.numeric]<=1)) {
-      lscv <- minimand.cv.ls(bws=bw.gamma,
-                             ydat=ydat,
-                             xdat=xdat,
-                             ckertype=ckertype,
-                             ckerorder=ckerorder,
-                             ukertype=ukertype,
-                             okertype=okertype,
-                             bwtype=bwtype,
-                             ...)
-    } else {
-      lscv <- maxPenalty
-    }
-
-    if(debug) write(c(lscv,bw.gamma),file="optim.debug",ncolumns=(num.bw+1),append=TRUE)
-    return(lscv)
-  }
-
-  sum.aicc <- function(bw.gamma,...) {
-
-    ## Note - we set the kernel for unordered and ordered regressors
-    ## to the liracine kernel (0<=lambda<=1) and test for proper
-    ## bounds in sum.lscv.
-
-    if(all(bw.gamma>=0)&&all(bw.gamma[!xdat.numeric]<=1)) {
-      aicc <- minimand.cv.aic(bws=bw.gamma,
-                              ydat=ydat,
-                              xdat=xdat,
-                              ckertype=ckertype,
-                              ckerorder=ckerorder,
-                              ukertype=ukertype,
-                              okertype=okertype,
-                              bwtype=bwtype,
-                              ...)
-    } else {
-      aicc <- maxPenalty
-    }
-
-    if(debug) write(c(aicc,bw.gamma),file="optim.debug",ncolumns=(num.bw+1),append=TRUE)
-    return(aicc)
-  }
-
-  ## Multistarting
-
-  fv.vec <- numeric(nmulti)
-
-  ## Pass in the W matrix rather than recomputing it each time
-
-  for(iMulti in 1:nmulti) {
-
-    num.numeric <- ncol(as.data.frame(xdat[,xdat.numeric]))
-
-    ## First initialize to values for factors (`liracine' kernel)
-
-    init.search.vals <- runif(ncol(xdat),0,1)
-
-    for(i in 1:ncol(xdat)) {
-      if(xdat.numeric[i]==TRUE) {
-        init.search.vals[i] <- runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
-      }
-    }
-
-    ## Initialize `best' values prior to search
-
-    if(iMulti == 1) {
-      fv <- maxPenalty
-      numimp <- 0
-      bw.opt <- init.search.vals
-      best <- 1
-    }
-
-    if(bwmethod == "cv.ls" ) {
-
-      suppressWarnings(optim.return <- optim(init.search.vals,
-                                             fn=sum.lscv,
-                                             method=optim.method,
-                                             control=optim.control,
-                                             degree=degree,
-                                             W=W,
-                                             ckertype=ckertype,
-                                             ckerorder=ckerorder,
-                                             ukertype=ukertype,
-                                             okertype=okertype,
-                                             bwtype=bwtype,
-                                             ...))
-
-      attempts <- 0
-      while((optim.return$convergence != 0) && (attempts <= optim.maxattempts)) {
-        init.search.vals <- runif(ncol(xdat),0,1)
-        if(xdat.numeric[i]==TRUE) {
-          init.search.vals[i] <- runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
-        }
-        attempts <- attempts + 1
-        optim.control$abstol <- optim.control$abstol * 10.0
-        optim.control$reltol <- optim.control$reltol * 10.0
-        suppressWarnings(optim.return <- optim(init.search.vals,
-                                               fn=sum.lscv,
-                                               method=optim.method,
-                                               control=optim.control,
-                                               degree=degree,
-                                               W=W,
-                                               ckertype=ckertype,
-                                               ckerorder=ckerorder,
-                                               ukertype=ukertype,
-                                               okertype=okertype,
-                                               bwtype=bwtype,
-                                               ...))
-      }
-
-    } else {
-
-      suppressWarnings(optim.return <- optim(init.search.vals,
-                                             fn=sum.aicc,
-                                             method=optim.method,
-                                             control=optim.control,
-                                             degree=degree,
-                                             W=W,
-                                             ckertype=ckertype,
-                                             ckerorder=ckerorder,
-                                             ukertype=ukertype,
-                                             okertype=okertype,
-                                             bwtype=bwtype,
-                                             ...))
-
-      attempts <- 0
-      while((optim.return$convergence != 0) && (attempts <= optim.maxattempts)) {
-        init.search.vals <- runif(ncol(xdat),0,1)
-        if(xdat.numeric[i]==TRUE) {
-          init.search.vals[i] <- runif(1,.5,1.5)*sd.robust(xdat[,i])*nrow(xdat)^{-1/(4+num.numeric)}
-        }
-        attempts <- attempts + 1
-        optim.control$abstol <- optim.control$abstol * 10.0
-        optim.control$reltol <- optim.control$reltol * 10.0
-        suppressWarnings(optim.return <- optim(init.search.vals,
-                                               fn = sum.aicc,
-                                               method=optim.method,
-                                               control = optim.control,
-                                               W=W,
-                                               ckertype=ckertype,
-                                               ckerorder=ckerorder,
-                                               ukertype=ukertype,
-                                               okertype=okertype,
-                                               bwtype=bwtype,
-                                               ...))
-      }
-    }
-
-    if(optim.return$convergence != 0) warning(" optim failed to converge")
-
-    fv.vec[iMulti] <- optim.return$value
-
-    if(optim.return$value < fv) {
-      bw.opt <- optim.return$par
-      fv <- optim.return$value
-      numimp <- numimp + 1
-      best <- iMulti
-      if(debug) {
-        if(iMulti==1) {
-          write(cbind(iMulti,t(bw.opt)),"bandwidth.out",ncolumns=(1+length(bw.opt)))
-          write(cbind(iMulti,fv),"optim.out",ncolumns=2)
-        } else {
-          write(cbind(iMulti,t(bw.opt)),"bandwidth.out",ncolumns=(1+length(bw.opt)),append=TRUE)
-          write(cbind(iMulti,fv),"optim.out",ncolumns=2,append=TRUE)
-        }
-      }
-    }
-
-  }
-
-  ## Restore seed
-
-  if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
-
-  return(list(bws=bw.opt,fv=fv,numimp=numimp,best=best,fv.vec=fv.vec))
-
-}
-
-## 03/24/2013: Note that for the function below which uses NOMAD for
-## optimization we cross-validate on scale factors throughout
-## (i.e. bandwidths for continuous predictors are scaled according to
-## length(ydat)^{-1/(num.numeric+2*ckerorder)} while those for
-## categorical are scaled by
-## length(ydat)^{-2/(num.numeric+2*ckerorder)}. We adjust the upper
-## bounds for the categorical variables accordingly (i.e. 1 and
-## (c-1)/c). This is done so that the grid search takes place on a
+## Note that for the function below which uses NOMAD for optimization
+## we cross-validate on scale factors throughout (i.e. bandwidths for
+## continuous predictors are scaled according to
+## sd.robust()*length(ydat)^{-1/(num.numeric+2*ckerorder)}). We adjust
+## the upper bounds for the categorical variables accordingly (i.e. 1
+## and (c-1)/c). This is done so that the grid search takes place on a
 ## _somewhat_ common scale and also allows us to sidestep the issue
 ## with upper bounds where we were previously using relative tolerance
 ## (I am grateful for Sebastien Le Digabel for providing hints that
@@ -1827,18 +1635,222 @@ glpcvNOMAD <- function(ydat=NULL,
                        bandwidth.min=sqrt(.Machine$double.eps),
                        bandwidth.min.numeric=1.0e-02,
                        bandwidth.switch=1.0e+06,
+                       bandwidth.scale.categorical=1.0e+04,
                        max.bb.eval=10000,
-                       initial.mesh.size.real="1",
-                       initial.mesh.size.integer="1",
-                       min.mesh.size.real="1.0e-05",
-                       min.mesh.size.integer="1.0e-05",
-                       min.poll.size.real="1.0e-08",
-                       min.poll.size.integer="1.0e-08",
+                       min.epsilon=.Machine$double.eps,
+                       initial.mesh.size.real=1,
+                       initial.mesh.size.integer=1,
+                       min.mesh.size.real=sqrt(.Machine$double.eps),
+                       min.mesh.size.integer=sqrt(.Machine$double.eps),
+                       min.poll.size.real=sqrt(.Machine$double.eps),
+                       min.poll.size.integer=sqrt(.Machine$double.eps),
                        cv.shrink=TRUE,
+                       cv.maxPenalty=sqrt(.Machine$double.xmax),
                        cv.warning=FALSE,
                        Bernstein=TRUE,
                        mpi=FALSE,
+                       restart.from.min=FALSE,
+                       opts=list(),
                        ...) {
+
+  ## Functions which, if defined outside, cause R warnings currently
+  ## (Jan 19 2014, reported to Zhenghua)
+
+  ## Jan 19 2014, optional args error reported to zhenghua... want to
+  ## pass ... but having ... in eval.lscv and in snomadr causes an error
+  ## message thrown by checkFunctionArguments
+  
+  ## In snomadr() we write wrappers around user-defined functions to
+  ## pass additional arguments
+  ##  eval.f.wrapper <- function(x){ eval.f(x,...) }
+  
+  eval.lscv <- function(input,
+                        params){
+  
+    ydat <- params$ydat
+    xdat <- params$xdat
+    xdat.numeric <- params$xdat.numeric
+    num.bw <- params$num.bw
+    num.numeric <- params$num.numeric
+    cv.maxPenalty <- params$cv.maxPenalty
+    degree <- params$degree
+    cv <- params$cv
+    ckertype <- params$ckertype
+    ckerorder <- params$ckerorder
+    ukertype <- params$ukertype
+    okertype <- params$okertype
+    bwtype <- params$bwtype
+    cv.shrink <- params$cv.shrink
+    cv.warning <- params$cv.warning
+    Bernstein <- params$Bernstein
+    bw.switch <- params$bw.switch
+    bandwidth.scale.categorical=params$bandwidth.scale.categorical
+  
+    bw.gamma <- input[1:num.bw]
+    if(cv=="degree-bandwidth")
+      degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
+  
+    ## Test for negative degrees of freedom
+  
+    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
+      return(cv.maxPenalty)
+  
+    W <- W.glp(xdat=xdat,
+               degree=degree,
+               Bernstein=Bernstein)
+  
+    console <- newLineConsole()
+    console <- printClear(console)
+    console <- printPop(console)
+  
+    if(all(bw.gamma < bw.switch)) {
+      ## No bandwidths hit their upper bounds
+      lscv <- minimand.cv.ls(bws=bw.gamma,
+                             ydat=ydat,
+                             xdat=xdat,
+                             degree=degree,
+                             W=W,
+                             ckertype=ckertype,
+                             ckerorder=ckerorder,
+                             ukertype=ukertype,
+                             okertype=okertype,
+                             bwtype=bwtype,
+                             cv.shrink=cv.shrink,
+                             cv.maxPenalty=cv.maxPenalty,
+                             cv.warning=cv.warning,
+                             bandwidth.scale.categorical=bandwidth.scale.categorical,
+                             ...)
+    } else if(all(bw.gamma >= bw.switch)) {
+      ## All bandwidths hit their upper bounds
+      if(all(degree==0)) {
+        lscv <- mean((ydat-mean(ydat))^2)
+      } else {
+        model <- lm(ydat~W-1)
+        htt <- hatvalues(model)
+        htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+        lscv <- mean((residuals(model)/(1-htt))^2)
+      }
+    } else {
+      ## Some bandwidths hit their upper bounds
+      degree.sub <- degree[bw.gamma[xdat.numeric]<bw.switch[xdat.numeric]]
+      lscv <- minimand.cv.ls(bws=bw.gamma[bw.gamma<bw.switch],
+                             ydat=ydat,
+                             xdat=xdat[,bw.gamma<bw.switch,drop=FALSE],
+                             degree=if(length(degree.sub)==0){0}else{degree.sub},
+                             W=W,
+                             ckertype=ckertype,
+                             ckerorder=ckerorder,
+                             ukertype=ukertype,
+                             okertype=okertype,
+                             bwtype=bwtype,
+                             cv.shrink=cv.shrink,
+                             cv.maxPenalty=cv.maxPenalty,
+                             cv.warning=cv.warning,
+                             bandwidth.scale.categorical=bandwidth.scale.categorical,
+                             ...)
+    }
+    console <- printPush("\r                                                                         ",console = console)
+    console <- printPush(paste("\rfv = ",format(lscv)," ",sep=""),console = console)
+    return(lscv)
+  }
+  
+  ## Jan 19 2014, optional args error reported to zhenghua... want to
+  ## pass ... but having ... in eval.aicc and in snomadr causes an error
+  ## message thrown by checkFunctionArguments
+  
+  ## In snomadr() we write wrappers around user-defined functions to
+  ## pass additional arguments
+  ##  eval.f.wrapper <- function(x){ eval.f(x,...) }
+  
+  eval.aicc <- function(input,
+                        params){
+  
+    ydat <- params$ydat
+    xdat <- params$xdat
+    xdat.numeric <- params$xdat.numeric
+    num.bw <- params$num.bw
+    num.numeric <- params$num.numeric
+    cv.maxPenalty <- params$cv.maxPenalty
+    degree <- params$degree
+    cv <- params$cv
+    ckertype <- params$ckertype
+    ckerorder <- params$ckerorder
+    ukertype <- params$ukertype
+    okertype <- params$okertype
+    bwtype <- params$bwtype
+    cv.shrink <- params$cv.shrink
+    cv.warning <- params$cv.warning
+    Bernstein <- params$Bernstein
+    bw.switch <- params$bw.switch
+    bandwidth.scale.categorical=params$bandwidth.scale.categorical
+  
+    bw.gamma <- input[1:num.bw]
+    if(cv=="degree-bandwidth")
+      degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
+  
+    ## Test for negative degrees of freedom
+  
+    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
+      return(cv.maxPenalty)
+  
+    W <- W.glp(xdat=xdat,
+               degree=degree,
+               Bernstein=Bernstein)
+  
+    console <- newLineConsole()
+    console <- printClear(console)
+    console <- printPop(console)
+  
+    if(all(bw.gamma < bw.switch)) {
+      ## No bandwidths hit their upper bounds
+      aicc <- minimand.cv.aic(bws=bw.gamma,
+                              ydat=ydat,
+                              xdat=xdat,
+                              degree=degree,
+                              W=W,
+                              ckertype=ckertype,
+                              ckerorder=ckerorder,
+                              ukertype=ukertype,
+                              okertype=okertype,
+                              bwtype=bwtype,
+                              cv.shrink=cv.shrink,
+                              cv.maxPenalty=cv.maxPenalty,
+                              cv.warning=cv.warning,
+                              bandwidth.scale.categorical=bandwidth.scale.categorical,
+                              ...)
+    } else if(all(bw.gamma >= bw.switch)) {
+      ## All bandwidths hit their upper bounds
+      if(all(degree==0)) {
+        aicc <- mean((ydat-mean(ydat))^2)
+      } else {
+        model <- lm(ydat~W-1)
+        htt <- hatvalues(model)
+        htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
+        aicc <- mean((residuals(model)/(1-htt))^2)
+      }
+    } else {
+      ## Some bandwidths hit their upper bounds
+      degree.sub <- degree[bw.gamma[xdat.numeric]<bw.switch[xdat.numeric]]
+      aicc <- minimand.cv.aic(bws=bw.gamma[bw.gamma<bw.switch],
+                              ydat=ydat,
+                              xdat=xdat[,bw.gamma<bw.switch,drop=FALSE],
+                              degree=if(length(degree.sub)==0){0}else{degree.sub},
+                              W=W,
+                              ckertype=ckertype,
+                              ckerorder=ckerorder,
+                              ukertype=ukertype,
+                              okertype=okertype,
+                              bwtype=bwtype,
+                              cv.shrink=cv.shrink,
+                              cv.maxPenalty=cv.maxPenalty,
+                              cv.warning=cv.warning,
+                              bandwidth.scale.categorical=bandwidth.scale.categorical,
+                              ...)
+    }
+    console <- printPush("\r                                                                         ",console = console)
+    console <- printPush(paste("\rfv = ",format(aicc)," ",sep=""),console = console)
+    return(aicc)
+  }
 
   ## Save the seed prior to setting
 
@@ -1856,7 +1868,7 @@ glpcvNOMAD <- function(ydat=NULL,
   okertype <- match.arg(okertype)
   bwtype <- match.arg(bwtype)
   if(!any(ckerorder==c(2,4,6,8))) stop("ckerorder must be 2, 4, 6, or 8")
-  
+
   bwmethod <- match.arg(bwmethod)
   cv <- match.arg(cv)
 
@@ -1876,8 +1888,6 @@ glpcvNOMAD <- function(ydat=NULL,
     if(!is.null(degree) && any(degree>degree.max)) stop(" Error: degree supplied but exceeds degree.max")
     if(!is.null(degree) && any(degree<degree.min)) stop(" Error: degree supplied but less than degree.min")
   }
-
-  maxPenalty <- sqrt(.Machine$double.xmax)
 
   ## For nearest neighbour bandwidths override default bandwidth.min
   ## and bandwidth.max and use sample size information.
@@ -1906,6 +1916,8 @@ glpcvNOMAD <- function(ydat=NULL,
   num.numeric <- ncol(as.data.frame(xdat[,xdat.numeric]))
   numeric.index <- which(xdat.numeric==TRUE)
 
+  if(num.numeric == 0) stop("generalized local polynomial regression requires at least one numeric predictor")
+
   if(!is.null(degree) && length(degree) != num.numeric) stop(paste(" Error: degree vector supplied has ", length(degree), " elements but there exist ", num.numeric," numeric.predictors",sep=""))
 
   xdat.unordered <- sapply(1:num.bw,function(i){is.factor(xdat[,i])&!is.ordered(xdat[,i])})
@@ -1927,7 +1939,7 @@ glpcvNOMAD <- function(ydat=NULL,
   ## unique distance between observations, say) or not. Regardless,
   ## using the default for both categorical and numeric bandwidths is
   ## likely not sensible.
-  
+
   if(!is.null(bandwidth.min.numeric)) {
     for(i in 1:num.numeric) {
       lb[numeric.index[i]] <- bandwidth.min.numeric
@@ -1943,13 +1955,13 @@ glpcvNOMAD <- function(ydat=NULL,
   ## search in the presence of large bandwidths (which otherwise would
   ## descend to the root of the tree).
 
-  bw.switch <- c(rep(bandwidth.switch*length(ydat)^{1/(num.numeric+2*ckerorder)}, num.bw))
+  bw.switch <- c(rep(bandwidth.switch, num.bw))
 
   if(bwtype!="fixed" && num.numeric > 0) {
     for(i in 1:num.numeric) {
       k.max <- knn.max(xdat[,numeric.index[i]])
       if(ub[numeric.index[i]] > k.max) ub[numeric.index[i]] <- k.max
-      if(bw.switch[numeric.index[i]] > k.max) bw.switch[numeric.index[i]] <- k.max      
+      if(bw.switch[numeric.index[i]] > k.max) bw.switch[numeric.index[i]] <- k.max
     }
   }
 
@@ -1958,28 +1970,29 @@ glpcvNOMAD <- function(ydat=NULL,
 
   INITIAL.MESH.SIZE <- list()
   MIN.MESH.SIZE <- list()
-  MIN.POLL.SIZE <- list()  
+  MIN.POLL.SIZE <- list()
 
   for(i in 1:num.bw) {
     INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.real
     MIN.MESH.SIZE[[i]] <- min.mesh.size.real
-    MIN.POLL.SIZE[[i]] <- min.poll.size.real        
+    MIN.POLL.SIZE[[i]] <- min.poll.size.real
     ## Need to do integer search for numeric predictors when bwtype is
     ## a nearest-neighbour, so set bbin appropriately.
     if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
       bbin[i] <- 1
     }
     if(!xdat.numeric[i]) {
-      ub[i] <- 1.0*length(ydat)^{2/(num.numeric+2*ckerorder)}
+      lb[i] <- lb[i]*bandwidth.scale.categorical
+      ub[i] <- 1*bandwidth.scale.categorical
       bw.switch[i] <- ub[i]
-      INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.integer      
+      INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.integer
       MIN.MESH.SIZE[[i]] <- min.mesh.size.integer
-      MIN.POLL.SIZE[[i]] <- min.poll.size.integer     
+      MIN.POLL.SIZE[[i]] <- min.poll.size.integer
     }
     ## Check for unordered and Aitchison/Aitken kernel
     if(xdat.unordered[i]==TRUE && ukertype=="aitchisonaitken") {
       c.num <- length(unique(xdat[,i]))
-      ub[i] <- (c.num-1)/c.num*length(ydat)^{2/(num.numeric+2*ckerorder)}
+      ub[i] <- (c.num-1)/c.num*bandwidth.scale.categorical
       bw.switch[i] <- ub[i]
     }
   }
@@ -1988,7 +2001,7 @@ glpcvNOMAD <- function(ydat=NULL,
   ## polynomial basis is well-conditioned or not. If it is, use the
   ## maximum well-conditioned basis.
 
-  ill.conditioned <- check.max.degree(xdat,rep(degree.max,num.numeric),Bernstein=Bernstein)
+  ill.conditioned <- check.max.degree(xdat,rep(degree.max,num.numeric),issue.warning=TRUE,Bernstein=Bernstein)
   degree.max.vec <- attr(ill.conditioned, "degree.max.vec")
 
   if(cv == "degree-bandwidth") {
@@ -2002,8 +2015,7 @@ glpcvNOMAD <- function(ydat=NULL,
 
   ## Assign the NOMAD parameters to opts which is passed to snomadr()
 
-  opts <- list()
-  opts$"EPSILON" <- .Machine$double.eps
+  opts$"EPSILON" <- min.epsilon
   opts$"MAX_BB_EVAL" <- max.bb.eval
   opts$"INITIAL_MESH_SIZE" <- INITIAL.MESH.SIZE
   opts$"MIN_MESH_SIZE" <- MIN.MESH.SIZE
@@ -2033,178 +2045,6 @@ glpcvNOMAD <- function(ydat=NULL,
   ## polynomial fit (W) in that dimension If all bandwidths hit their
   ## upper bound/are large, we get the global polynomial OLS fit. Note
   ## we have both the ls.cv and aic.cv methods.
-    
-  ## Create the function wrappers to be fed to the snomadr solver for
-  ## leave-one-out cross-validation and Hurvich, Simonoff, and Tsai's
-  ## AIC_c approach
-
-  eval.lscv <- function(input, params){
-
-    ydat <- params$ydat
-    xdat <- params$xdat
-    xdat.numeric <- params$xdat.numeric
-    num.bw <- params$num.bw
-    num.numeric <- params$num.numeric
-    maxPenalty <- params$maxPenalty
-    degree <- params$degree
-    cv <- params$cv
-    ckertype <- params$ckertype
-    ckerorder <- params$ckerorder
-    ukertype <- params$ukertype
-    okertype <- params$okertype
-    bwtype <- params$bwtype
-    cv.shrink <- params$cv.shrink
-    cv.warning <- params$cv.warning
-    Bernstein <- params$Bernstein
-    bw.switch <- params$bw.switch
-
-    bw.gamma <- input[1:num.bw]
-    if(cv=="degree-bandwidth")
-      degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
-
-    ## Test for negative degrees of freedom
-
-    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
-      return(maxPenalty)
-
-    W <- W.glp(xdat=xdat,
-               degree=degree,
-               Bernstein=Bernstein)
-
-    console <- newLineConsole()
-    console <- printClear(console)
-    console <- printPop(console)
-
-    if(all(bw.gamma < bw.switch)) {
-      ## No bandwidths hit their upper bounds
-      lscv <- minimand.cv.ls(bws=bw.gamma,
-                             ydat=ydat,
-                             xdat=xdat,
-                             degree=degree,
-                             W=W,
-                             ckertype=ckertype,
-                             ckerorder=ckerorder,
-                             ukertype=ukertype,
-                             okertype=okertype,
-                             bwtype=bwtype,
-                             cv.shrink=cv.shrink,
-                             cv.warning=cv.warning,
-                             ...)
-    } else if(all(bw.gamma >= bw.switch)) {
-      ## All bandwidths hit their upper bounds
-      if(all(degree==0)) {
-        lscv <- mean((ydat-mean(ydat))^2)
-      } else {
-        model <- lm(ydat~W-1)
-        htt <- hatvalues(model)
-        htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
-        lscv <- mean((residuals(model)/(1-htt))^2)
-      }
-    } else {
-      ## Some bandwidths hit their upper bounds
-      degree.sub <- degree[bw.gamma[xdat.numeric]<bw.switch[xdat.numeric]]
-      lscv <- minimand.cv.ls(bws=bw.gamma[bw.gamma<bw.switch],
-                             ydat=ydat,
-                             xdat=xdat[,bw.gamma<bw.switch,drop=FALSE],
-                             degree=if(length(degree.sub)==0){0}else{degree.sub},
-                             W=W,
-                             ckertype=ckertype,
-                             ckerorder=ckerorder,
-                             ukertype=ukertype,
-                             okertype=okertype,
-                             bwtype=bwtype,
-                             cv.shrink=cv.shrink,
-                             cv.warning=cv.warning,
-                             ...)
-    }
-    console <- printPush("\r                                                                         ",console = console)
-    console <- printPush(paste("\rfv = ",format(lscv)," ",sep=""),console = console)
-    return(lscv)
-  }
-
-  eval.aicc <- function(input, params){
-
-    ydat <- params$ydat
-    xdat <- params$xdat
-    xdat.numeric <- params$xdat.numeric
-    num.bw <- params$num.bw
-    num.numeric <- params$num.numeric
-    maxPenalty <- params$maxPenalty
-    degree <- params$degree
-    cv <- params$cv
-    ckertype <- params$ckertype
-    ckerorder <- params$ckerorder
-    ukertype <- params$ukertype
-    okertype <- params$okertype
-    bwtype <- params$bwtype
-    cv.shrink <- params$cv.shrink
-    cv.warning <- params$cv.warning
-    Bernstein <- params$Bernstein
-    bw.switch <- params$bw.switch
-
-    bw.gamma <- input[1:num.bw]
-    if(cv=="degree-bandwidth")
-      degree <- round(input[(num.bw+1):(num.bw+num.numeric)])
-
-    ## Test for negative degrees of freedom
-
-    if(dim.bs(basis="glp",kernel=TRUE,degree=degree,segments=rep(1,length(degree)))>length(ydat)-1)
-      return(maxPenalty)
-
-    W <- W.glp(xdat=xdat,
-               degree=degree,
-               Bernstein=Bernstein)
-
-    console <- newLineConsole()
-    console <- printClear(console)
-    console <- printPop(console)
-
-    if(all(bw.gamma < bw.switch)) {
-      ## No bandwidths hit their upper bounds
-      aicc <- minimand.cv.aic(bws=bw.gamma,
-                              ydat=ydat,
-                              xdat=xdat,
-                              degree=degree,
-                              W=W,
-                              ckertype=ckertype,
-                              ckerorder=ckerorder,
-                              ukertype=ukertype,
-                              okertype=okertype,
-                              bwtype=bwtype,
-                              cv.shrink=cv.shrink,
-                              cv.warning=cv.warning,
-                              ...)
-    } else if(all(bw.gamma >= bw.switch)) {
-      ## All bandwidths hit their upper bounds
-      if(all(degree==0)) {
-        aicc <- mean((ydat-mean(ydat))^2)
-      } else {
-        model <- lm(ydat~W-1)
-        htt <- hatvalues(model)
-        htt <- ifelse(htt < 1, htt, 1-.Machine$double.eps)
-        aicc <- mean((residuals(model)/(1-htt))^2)
-      }
-    } else {
-      ## Some bandwidths hit their upper bounds
-      degree.sub <- degree[bw.gamma[xdat.numeric]<bw.switch[xdat.numeric]]
-      aicc <- minimand.cv.aic(bws=bw.gamma[bw.gamma<bw.switch],
-                              ydat=ydat,
-                              xdat=xdat[,bw.gamma<bw.switch,drop=FALSE],
-                              degree=if(length(degree.sub)==0){0}else{degree.sub},
-                              W=W,
-                              ckertype=ckertype,
-                              ckerorder=ckerorder,
-                              ukertype=ukertype,
-                              okertype=okertype,
-                              bwtype=bwtype,
-                              cv.shrink=cv.shrink,
-                              cv.warning=cv.warning,
-                              ...)
-    }
-    console <- printPush("\r                                                                         ",console = console)
-    console <- printPush(paste("\rfv = ",format(aicc)," ",sep=""),console = console)
-    return(aicc)
-  }
 
   ## Generate the params fed to the snomadr solver
 
@@ -2214,7 +2054,7 @@ glpcvNOMAD <- function(ydat=NULL,
   params$xdat.numeric <- xdat.numeric
   params$num.bw <- num.bw
   params$num.numeric <- num.numeric
-  params$maxPenalty <- maxPenalty
+  params$cv.maxPenalty <- cv.maxPenalty
   params$cv <- cv
   params$degree <- degree
   params$ckertype <- ckertype
@@ -2226,6 +2066,7 @@ glpcvNOMAD <- function(ydat=NULL,
   params$cv.warning <- cv.warning
   params$Bernstein <- Bernstein
   params$bw.switch <- bw.switch
+  params$bandwidth.scale.categorical=bandwidth.scale.categorical
 
   ## Multistarting
 
@@ -2251,43 +2092,46 @@ glpcvNOMAD <- function(ydat=NULL,
     init.search.vals <- numeric()
     for(i in 1:num.bw) {
       if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-        init.search.vals[i] <- runif(1,0.5+lb[i],1.5)*length(ydat)^{2/(num.numeric+2*ckerorder)}
+        init.search.vals[i] <- runif(1,lb[i],1.5)
       }
       if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
         init.search.vals[i] <- round(runif(1,lb[i],sqrt(ub[i])))
       }
       if(xdat.numeric[i]!=TRUE) {
-        init.search.vals[i] <- runif(1,lb[i],1)*length(ydat)^{2/(num.numeric+2*ckerorder)}
-      }
-      if(xdat.unordered[i]==TRUE && ukertype=="aitchisonaitken") {
-        c.num <- length(unique(xdat[,i]))
-        init.search.vals[i] <- runif(1,lb[i],(c.num-1)/c.num-lb[i])*length(ydat)^{2/(num.numeric+2*ckerorder)}
+        init.search.vals[i] <- runif(1,lb[i],ub[i])
       }
     }
   } else {
+    ## If bandwidths are provided, need to convert those for the
+    ## numeric variables into scale factors (level on which snomadr is
+    ## optimizing)
     init.search.vals <- bandwidth
+    for(i in 1:num.bw) {
+      if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
+        init.search.vals[i] <- bandwidth[i]/(sd.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)})
+      }
+      if(xdat.numeric[i]!=TRUE) {
+        init.search.vals[i] <- bandwidth[i]*bandwidth.scale.categorical
+      }
+    }
   }
 
   ## Generate all initial points for the multiple restarting
 
-	x0.pts <- matrix(numeric(1), nmulti, length(bbin))
+  x0.pts <- matrix(numeric(1), nmulti, length(bbin))
 
-	for(iMulti in 1:nmulti) {
+  for(iMulti in 1:nmulti) {
     if(iMulti != 1) {
       init.search.vals <- numeric()
       for(i in 1:num.bw) {
         if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-          init.search.vals[i] <- runif(1,0.5+lb[i],1.5)*length(ydat)^{2/(num.numeric+2*ckerorder)}
+          init.search.vals[i] <- runif(1,lb[i],1.5)
         }
         if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
           init.search.vals[i] <- round(runif(1,lb[i],sqrt(ub[i])))
         }
         if(xdat.numeric[i]!=TRUE) {
-          init.search.vals[i] <- runif(1,lb[i],1)*length(ydat)^{2/(num.numeric+2*ckerorder)}
-        }
-        if(xdat.unordered[i]==TRUE && ukertype=="aitchisonaitken") {
-          c.num <- length(unique(xdat[,i]))
-          init.search.vals[i] <- runif(1,lb[i],(c.num-1)/c.num-lb[i])*length(ydat)^{2/(num.numeric+2*ckerorder)}
+          init.search.vals[i] <- runif(1,lb[i],ub[i])
         }
       }
     }
@@ -2300,49 +2144,79 @@ glpcvNOMAD <- function(ydat=NULL,
 
     if(cv =="degree-bandwidth"){
       x0.pts[iMulti, ] <- c(init.search.vals, degree)
-		}
+    }
     else {
       x0.pts[iMulti, ] <- c(init.search.vals)
-		}
+    }
 
-	}
+  }
 
-	if(bwmethod == "cv.ls" ) {
-			solution<-snomadr(eval.f=eval.lscv,
-												n=length(bbin),
-												x0=as.numeric(x0.pts),
-												bbin=bbin,
-												bbout=0,
-												lb=lb,
-												ub=ub,
-												nmulti=ifelse(nmulti==1,0,nmulti),
-												random.seed=random.seed,
-												opts=opts,
-												print.output=print.output,
-												params=params);
+  if(bwmethod == "cv.ls" ) {
+      solution<-snomadr(eval.f=eval.lscv,
+                        n=length(bbin),
+                        x0=as.numeric(x0.pts),
+                        bbin=bbin,
+                        bbout=0,
+                        lb=lb,
+                        ub=ub,
+                        nmulti=ifelse(nmulti==1,0,nmulti),
+                        random.seed=random.seed,
+                        opts=opts,
+                        print.output=print.output,
+                        params=params,
+                        ...);
 
-	} else {
-			solution<-snomadr(eval.f=eval.aicc,
-												n=length(bbin),
-												x0=as.numeric(x0.pts),
-												bbin=bbin,
-												bbout=0,
-												lb=lb,
-												ub=ub,
-												nmulti=ifelse(nmulti==1,0,nmulti),
-												random.seed=random.seed,
-												opts=opts,
-												print.output=print.output,
-												params=params);
-	}
+      if(restart.from.min) solution<-snomadr(eval.f=eval.lscv,
+                                             n=length(bbin),
+                                             x0=solution$solution,
+                                             bbin=bbin,
+                                             bbout=0,
+                                             lb=lb,
+                                             ub=ub,
+                                             nmulti=1,
+                                             random.seed=random.seed,
+                                             opts=opts,
+                                             print.output=print.output,
+                                             params=params,
+                                             ...);
 
-	fv.vec[1] <- solution$objective
+  } else {
+      solution<-snomadr(eval.f=eval.aicc,
+                        n=length(bbin),
+                        x0=as.numeric(x0.pts),
+                        bbin=bbin,
+                        bbout=0,
+                        lb=lb,
+                        ub=ub,
+                        nmulti=ifelse(nmulti==1,0,nmulti),
+                        random.seed=random.seed,
+                        opts=opts,
+                        print.output=print.output,
+                        params=params,
+                        ...);
 
-	bw.opt.sf <- solution$solution[1:num.bw]
+      if(restart.from.min) solution<-snomadr(eval.f=eval.aicc,
+                                             n=length(bbin),
+                                             x0=solution$solution,
+                                             bbin=bbin,
+                                             bbout=0,
+                                             lb=lb,
+                                             ub=ub,
+                                             nmulti=1,
+                                             random.seed=random.seed,
+                                             opts=opts,
+                                             print.output=print.output,
+                                             params=params,
+                                             ...);
+  }
+
+  fv.vec[1] <- solution$objective
+
+  bw.opt.sf <- solution$solution[1:num.bw]
 
   ## We optimize at the level of scaling factors (multiples of
   ## bandwidths) so we need to back out the unscaled (raw) bandwidths.
-  
+
   bw.opt <- bw.opt.sf
 
   if(bwtype=="fixed") {
@@ -2350,32 +2224,32 @@ glpcvNOMAD <- function(ydat=NULL,
       sd.xdat <- sd.robust(xdat[,numeric.index[i]])
       bw.opt[numeric.index[i]] <- bw.opt[numeric.index[i]]*sd.xdat*length(ydat)^{-1/(num.numeric+2*ckerorder)}
     }
-  } 
+  }
 
   for(i in 1:num.bw) {
     if(!xdat.numeric[i]) {
-      bw.opt[i] <- bw.opt[i]*length(ydat)^{-2/(num.numeric+2*ckerorder)}
+      bw.opt[i] <- bw.opt[i]/bandwidth.scale.categorical
     }
   }
 
-	if(cv == "degree-bandwidth") {
+  if(cv == "degree-bandwidth") {
     degree.opt <- solution$solution[(num.bw+1):(num.bw+num.numeric)]
     for(i in num.numeric){
       if(isTRUE(all.equal(degree.opt[i],ub[num.bw+i]))) warning(paste(" Optimal degree for numeric predictor ",i," equals search upper bound (", ub[num.bw+i],")",sep=""))
     }
-	} else {
+  } else {
     degree.opt <- degree
   }
 
   if(!is.null(opts$MAX_BB_EVAL)){
-    if(nmulti>0) {if(nmulti*opts$MAX_BB_EVAL <= solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep=""))} 
+    if(nmulti>0) {if(nmulti*opts$MAX_BB_EVAL <= solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep=""))}
     if(nmulti==0) {if(opts$MAX_BB_EVAL <= solution$bbe) warning(paste(" MAX_BB_EVAL reached in NOMAD: perhaps use a larger value...", sep="")) }
   }
 
-	fv <- solution$objective
+  fv <- solution$objective
 
-	best <- NULL
-	numimp <- 0
+  best <- NULL
+  numimp <- 0
 
   for(i in num.bw) {
     if(isTRUE(all.equal(bw.opt[i],lb[i]))) warning(paste(" Optimal bandwidth for predictor ",i," equals search lower bound (", formatC(lb[i],digits=3,format="g"),"): rerun with smaller bandwidth.min",sep=""))
@@ -2389,7 +2263,7 @@ glpcvNOMAD <- function(ydat=NULL,
 
   if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
 
-  if(isTRUE(all.equal(fv,sqrt(.Machine$double.xmax)))) stop(" Search failed: restart with larger nmulti or smaller degree.max")
+  if(isTRUE(all.equal(fv,cv.maxPenalty))) stop(" Search failed: restart with larger nmulti or smaller degree.max")
 
   return(list(bws=bw.opt,
               bws.sf=bw.opt.sf,
@@ -2801,7 +2675,6 @@ plot.npglpreg <- function(x,
       } else {
         fitted.values <- est$gradient.categorical.mat[,i.categorical]
       }
-
 
       if(!ci) {
 

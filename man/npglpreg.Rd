@@ -31,6 +31,7 @@ npglpreg(\dots)
          gradient.vec = NULL,
          gradient.categorical = FALSE,
          cv.shrink = TRUE,
+         cv.maxPenalty = sqrt(.Machine$double.xmax),
          cv.warning = FALSE,
          Bernstein = TRUE,
          mpi = FALSE,
@@ -51,7 +52,7 @@ npglpreg(\dots)
          okertype = c("liracine", "wangvanryzin"),
          bwtype = c("fixed", "generalized_nn", "adaptive_nn", "auto"),
          cv = c("degree-bandwidth", "bandwidth", "none"),
-         cv.func = c("cv.ls", "cv.gcv", "cv.aic"),
+         cv.func = c("cv.ls", "cv.aic"),
          nmulti = 5,
          random.seed = 42,
          degree.max = 10,
@@ -60,16 +61,21 @@ npglpreg(\dots)
          bandwidth.min = sqrt(.Machine$double.eps),
          bandwidth.min.numeric = 1.0e-02,
          bandwidth.switch = 1.0e+06,
+         bandwidth.scale.categorical = 1.0e+04,
          max.bb.eval = 10000,
-         initial.mesh.size.real = "1",
-         initial.mesh.size.integer = "1",
-         min.mesh.size.real = "1.0e-05",
-         min.mesh.size.integer = "1.0e-05",
-         min.poll.size.real = "1.0e-08",
-         min.poll.size.integer = "1.0e-08",
+         min.epsilon = .Machine$double.eps,
+         initial.mesh.size.real = 1,
+         initial.mesh.size.integer = 1,
+         min.mesh.size.real = sqrt(.Machine$double.eps),
+         min.mesh.size.integer = sqrt(.Machine$double.eps),
+         min.poll.size.real = sqrt(.Machine$double.eps),
+         min.poll.size.integer = sqrt(.Machine$double.eps),
+         opts=list(),
+         restart.from.min = FALSE,
          gradient.vec = NULL,
          gradient.categorical = FALSE,
          cv.shrink = TRUE,
+         cv.maxPenalty = sqrt(.Machine$double.xmax),
          cv.warning = FALSE,
          Bernstein = TRUE,
          mpi = FALSE,
@@ -156,20 +162,25 @@ for each dimension of the continuous \code{x} in \code{txdat}}
     \code{generalized_nn}: compute generalized nearest neighbor bandwidths \cr
     \code{adaptive_nn}: compute adaptive nearest neighbor bandwidths
   }
-  \item{cv}{
-  a character string (default \code{cv="nomad"}) indicating whether to
-  use nonsmooth mesh adaptive direct search, or no search (i.e. use 
-  supplied values for \code{degree} and \code{bws})
-}
+
+  \item{cv}{ a character string (default \code{cv="nomad"}) indicating
+    whether to use nonsmooth mesh adaptive direct search, or no search
+    (i.e. use supplied values for \code{degree} and \code{bws})
+  }
+
   \item{cv.func}{a character string (default \code{cv.func="cv.ls"})
     indicating which method to use to select smoothing
-    parameters. \code{cv.gcv} specifies generalized cross-validation
-    (Craven and Wahba (1979)), \code{cv.aic} specifies expected
-    Kullback-Leibler cross-validation (Hurvich, Simonoff, and Tsai
-    (1998)), and \code{cv.ls} specifies least-squares
-    cross-validation }
+    parameters. \code{cv.aic} specifies expected Kullback-Leibler
+    cross-validation (Hurvich, Simonoff, and Tsai (1998)), and
+    \code{cv.ls} specifies least-squares cross-validation
+  }
 
   \item{max.bb.eval}{
+    argument passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
+
+  \item{min.epsilon}{
     argument passed to the NOMAD solver (see \code{\link{snomadr}} for
     further details)
   }
@@ -204,11 +215,15 @@ for each dimension of the continuous \code{x} in \code{txdat}}
     further details)
   }      
 
+  \item{opts}{ list of optional arguments passed to the NOMAD solver
+    (see \code{\link{snomadr}} for further details) }
+
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
     points (default \code{nmulti=5})
   }
+  
   \item{random.seed}{ when it is not missing and not equal to 0, the
     initial points will be generated using this seed when using
     \code{\link{snomadr}} }
@@ -232,10 +247,22 @@ for each dimension of the continuous \code{x} in \code{txdat}}
 
   \item{bandwidth.switch}{ the minimum bandwidth scale (i.e. number of
     scaled standard deviations) for each of the continuous predictors
-    (default \code{bandwidth.switch=1.0e+05}) before the local polynomial
+    (default \code{bandwidth.switch=1.0e+06}) before the local polynomial
     is treated as global during cross-validation at which point a global
     categorical kernel weighted least squares fit is used for
     computational efficiency}
+
+  \item{bandwidth.scale.categorical}{ the upper end for the rescaled
+  bandwidths for the categorical predictors (default
+  \code{bandwidth.scale.categorical=1.0e+04}) - the aim is to `even up'
+  the scale of the search parameters as much as possible, so when very
+  large scale factors are selected for the continuous predictors, a
+  larger value may improve search}
+
+  \item{restart.from.min}{ a logical value indicating to recommence
+  \code{\link{snomadr}} with the optimal values found from its first
+  invocation (typically quick but sometimes recommended in the field of
+  optimization)}
   
   \item{gradient.vec}{ a vector corresponding to the order of the
     partial (or cross-partial) and which variable the partial (or
@@ -250,6 +277,10 @@ for each dimension of the continuous \code{x} in \code{txdat}}
   cross-validation (default \code{cv.shrink=TRUE}) or to instead test
   for ill-conditioned matrices and penalize heavily when this is the
   case (much stronger condition imposed on cross-validation)}
+
+\item{cv.maxPenalty}{ a penalty applied during cross-validation when a
+  delete-one estimate is not finite or the polynomial basis is not of
+  full column rank }
 
 \item{cv.warning}{ a logical value indicating whether to issue an
   immediate warning message when ill conditioned bases are encountered
@@ -312,10 +343,31 @@ for each dimension of the continuous \code{x} in \code{txdat}}
     
   }
   
-  This function is in beta status until further notice.
+  This function is in beta status until further notice (eventually it
+  will be rolled into the np/npRmpi packages after the final status of
+  snomadr/NOMAD gets sorted out).
 
-  Eventually it will be rolled into the np/npRmpi packages after the
-  final status of snomadr/NOMAD gets sorted out.
+  Optimizing the cross-validation function jointly for bandwidths
+  (vectors of continuous parameters) and polynomial degrees (vectors of
+  integer parameters) constitutes a mixed-integer optimization
+  problem. These problems are not only \sQuote{hard} from the numerical
+  optimization perspective, but are also computationally intensive
+  (contrast this to where we conduct, say, local linear regression which
+  sets the degree of the polynomial vector to a global value
+  \code{degree=1} hence we only need to optimize with respect to the
+  continuous bandwidths). Because of this we must be mindful of the
+  presence of local optima (the objective function is non-convex and
+  non-differentiable). Restarting search from different initial starting
+  points is recommended (see \code{nmulti}) and by default this is done
+  more than once. We encourage users to adopt \sQuote{multistarting} and
+  to investigate the impact of changing default search parameters such
+  as \code{initial.mesh.size.real}, \code{initial.mesh.size.integer},
+  \code{min.mesh.size.real},
+  \code{min.mesh.size.integer},\code{min.poll.size.real}, and
+  \code{min.poll.size.integer}. The default values were chosen based on
+  extensive simulation experiments and were chosen so as to yield robust
+  performance while being mindful of excessive computation - of course,
+  no one setting can be globally optimal.
 
 }
 \value{
@@ -346,9 +398,6 @@ for each dimension of the continuous \code{x} in \code{txdat}}
   \item{degree}{ integer/vector specifying the degree of the polynomial
      for each dimension of the continuous \code{x}}
   
-  \item{kernel}{ a logical value indicating whether kernel smoothing was
-    used (\code{kernel=TRUE}) or not }
-
   \item{gradient}{ the estimated gradient (vector) corresponding to the vector
     \code{gradient.vec}}
 

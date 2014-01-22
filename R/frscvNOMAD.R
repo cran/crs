@@ -28,6 +28,7 @@ frscvNOMAD <- function(xz,
                        initial.mesh.size.integer="1",
                        min.mesh.size.integer=paste("r",sqrt(.Machine$double.eps),sep=""),
                        min.poll.size.integer=paste("r",sqrt(.Machine$double.eps),sep=""),
+                       opts=list(),
                        nmulti=0,
                        tau=NULL,
                        weights=NULL,
@@ -47,6 +48,11 @@ frscvNOMAD <- function(xz,
     if(segments.max < segments.min) segments.max <- (segments.min + 1)
     if(missing(degree)) degree <- NULL
     if(missing(segments)) segments <- NULL
+
+    ## Set DISPLAY_DEGREE to 0 if crs.messages=FALSE and
+    ## DISPLAY_DEGREE is not provided
+    
+    if(!options('crs.messages')$crs.messages && is.null(opts[["DISPLAY_DEGREE"]])) opts$"DISPLAY_DEGREE"=0
 
     t1 <- Sys.time()
 
@@ -204,7 +210,9 @@ frscvNOMAD <- function(xz,
             console <- printPop(console)
             console <- printPush("\r                                                ",console = console)
             console <- printPush(paste("\rfv = ",format(cv)," ", sep=""),console = console)
+
             return(cv)
+
         }
 
         ##generate params
@@ -324,15 +332,15 @@ frscvNOMAD <- function(xz,
         return(solution)
     }
 
-    opts <- list()
     opts$"EPSILON" <- .Machine$double.eps
     opts$"MAX_BB_EVAL" <- max.bb.eval
     opts$"INITIAL_MESH_SIZE" <- initial.mesh.size.integer
     opts$"MIN_MESH_SIZE" <-  min.mesh.size.integer
     opts$"MIN_POLL_SIZE" <- min.poll.size.integer
 
-    console <- newLineConsole()
     print.output <- FALSE
+
+    console <- newLineConsole()
     if(!is.null(opts$DISPLAY_DEGREE)){
         if(opts$DISPLAY_DEGREE>0){
             print.output <- TRUE
@@ -343,8 +351,9 @@ frscvNOMAD <- function(xz,
         print.output <- TRUE
         console <- printPush("Calling NOMAD (Nonsmooth Optimization by Mesh Adaptive Direct Search)\n",console = console)
     }
+    
     ## Take data frame x and parse into factors (z) and numeric (x)
-
+    
     if(!is.data.frame(xz)) stop(" xz must be a data frame")
 
     xztmp <- splitFrame(xz)
