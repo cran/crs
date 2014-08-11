@@ -8,10 +8,16 @@
 ## different form purely for computational simplicity. Both approaches
 ## are identical though.
 
-sd.robust <- function(x) {
-  sd.vec <- apply(as.matrix(x),2,sd)
-  IQR.vec <- apply(as.matrix(x),2,IQR)/(qnorm(.25,lower.tail=F)*2)
-  return(ifelse(sd.vec<IQR.vec|IQR.vec==0,sd.vec,IQR.vec))
+scale.robust <- function(y){
+ if(any(dim(as.matrix(y)) == 0))
+      return(0)
+  sd.vec <- apply(as.matrix(y),2,sd)
+  IQR.vec <- apply(as.matrix(y),2,IQR)/(qnorm(.25,lower.tail=F)*2)
+  mad.vec <- apply(as.matrix(y),2,mad)
+  a <- apply(cbind(sd.vec,IQR.vec,mad.vec),1, function(x) max(x))
+  if(any(a<=0)) warning(paste("variable ",which(a<=0)," appears to be constant",sep=""))
+  a <- apply(cbind(sd.vec,IQR.vec,mad.vec),1, function(x) min(x[x>0]))  
+  return(a)
 }
 
 mypoly <- function(x,
@@ -628,6 +634,11 @@ npglpreg.formula <- function(formula,
 
   ## Basic error trapping...
 
+#  if(cv.func=="cv.aic" && cv.shrink==TRUE) {
+#      warning("cv.shrink and cv.aic currently incompatible, cv.shrink set to FALSE")
+#      cv.shrink <- FALSE
+#  }
+
   if(!is.logical(mpi)) stop(" Error: mpi must be logical (TRUE/FALSE)")
   if(!is.logical(Bernstein)) stop(" Error: Bernstein must be logical (TRUE/FALSE)")
   if(!is.logical(gradient.categorical)) stop(" Error: gradient.categorical must be logical (TRUE/FALSE)")
@@ -1149,15 +1160,15 @@ glpregEst <- function(tydat=NULL,
     coef.mat <- matrix(cv.maxPenalty,ncol(W),n.eval)
     epsilon <- 1.0/n.eval
     ridge <- double(n.eval)
+    ridge.lc <- double(n.eval)    
     doridge <- !logical(n.eval)
 
     nc <- ncol(tww[,,1])
 
     ridger <- function(i) {
       doridge[i] <<- FALSE
-      ridge.val <- ridge[i]*tyw[1,i][1]/NZD(tww[,,i][1,1])
-      tryCatch(solve(tww[,,i]+diag(rep(ridge[i],nc)),
-                     tyw[,i]+c(ridge.val,rep(0,nc-1)),tol=.Machine$double.eps),
+      ridge.lc[i] <- ridge[i]*tyw[1,i][1]/NZD(tww[,,i][1,1])
+      tryCatch(chol2inv(chol(tww[,,i]+diag(rep(ridge[i],nc))))%*%tyw[,i],
                error = function(e){
                  ridge[i] <<- ridge[i]+epsilon
                  doridge[i] <<- TRUE
@@ -1174,9 +1185,16 @@ glpregEst <- function(tydat=NULL,
       coef.mat[,iloo] <- sapply(iloo, ridger)
     }
 
+    ## Shrinking towards the local constant mean is accomplished via
+    ## ridge.lc[i] which is ridge[i] times the local constant
+    ## estimator
+
     mhat <- sapply(1:n.eval, function(i) {
-      W.eval[i,, drop = FALSE] %*% coef.mat[,i]
+      (1-ridge[i]) * W.eval[i,, drop = FALSE] %*% coef.mat[,i] + ridge.lc[i]
     })
+
+    ## Ought to have a correction here for derivative when shrinking
+    ## towards the local constant - XXX
 
     if(!is.null(gradient.vec)) {
       gradient <- sapply(1:n.eval, function(i) {
@@ -1255,7 +1273,7 @@ minimand.cv.ls <- function(bws=NULL,
 
   for(i in 1:num.bw) {
     if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-      bws[i] <- bws[i]*sd.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)}
+      bws[i] <- bws[i]*scale.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)}
     }
     if(xdat.numeric[i]!=TRUE) {
       bws[i] <- bws[i]/bandwidth.scale.categorical
@@ -1329,7 +1347,7 @@ minimand.cv.ls <- function(bws=NULL,
                     leave.one.out = TRUE,
                     bandwidth.divide = TRUE,
                     ckertype = ckertype,
-                    ckerorder=ckerorder,
+                    ckerorder = ckerorder,
                     ukertype = ukertype,
                     okertype = okertype,
                     bwtype = bwtype,
@@ -1355,6 +1373,7 @@ minimand.cv.ls <- function(bws=NULL,
       mean.loo <- rep(cv.maxPenalty,n)
       epsilon <- 1.0/n
       ridge <- double(n)
+      ridge.lc <- double(n)      
       doridge <- !logical(n)
 
       nc <- ncol(tww[,,1])
@@ -1364,9 +1383,8 @@ minimand.cv.ls <- function(bws=NULL,
 
       ridger <- function(i) {
         doridge[i] <<- FALSE
-        ridge.val <- ridge[i]*tyw[1,i][1]/NZD(tww[,,i][1,1])
-        W[i,, drop = FALSE] %*% tryCatch(solve(tww[,,i]+diag(rep(ridge[i],nc)),
-                tyw[,i]+c(ridge.val,rep(0,nc-1)),tol=.Machine$double.eps),
+        ridge.lc[i] <- ridge[i]*tyw[1,i][1]/NZD(tww[,,i][1,1])
+        W[i,, drop = FALSE] %*% tryCatch(chol2inv(chol(tww[,,i]+diag(rep(ridge[i],nc))))%*%tyw[,i],
                 error = function(e){
                   ridge[i] <<- ridge[i]+epsilon
                   doridge[i] <<- TRUE
@@ -1375,12 +1393,16 @@ minimand.cv.ls <- function(bws=NULL,
                 })
       }
 
+      ## Shrinking towards the local constant mean is accomplished via
+      ## ridge.lc[i] which is ridge[i] times the local constant
+      ## estimator
+
       while(any(doridge)){
         iloo <- (1:n)[doridge]
-        mean.loo[iloo] <- sapply(iloo, ridger)
+        mean.loo[iloo] <- (1-ridge[i])*sapply(iloo, ridger) + ridge.lc[i]
       }
 
-      if (!any(mean.loo == cv.maxPenalty)){
+      if (!is.na(any(mean.loo == cv.maxPenalty)) && !any(mean.loo == cv.maxPenalty)){
         fv <- mean((ydat-mean.loo)^2)
       } else {
         fv <- cv.maxPenalty
@@ -1453,7 +1475,7 @@ minimand.cv.aic <- function(bws=NULL,
 
   for(i in 1:num.bw) {
     if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-      bws[i] <- bws[i]*sd.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)}
+      bws[i] <- bws[i]*scale.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)}
     }
     if(xdat.numeric[i]!=TRUE) {
       bws[i] <- bws[i]/bandwidth.scale.categorical
@@ -1551,6 +1573,7 @@ minimand.cv.aic <- function(bws=NULL,
       ghat <- rep(cv.maxPenalty,n)
       epsilon <- 1.0/n
       ridge <- double(n)
+      ridge.lc <- double(n)      
       doridge <- !logical(n)
 
       nc <- ncol(tww[,,1])
@@ -1560,9 +1583,8 @@ minimand.cv.aic <- function(bws=NULL,
 
       ridger <- function(i) {
         doridge[i] <<- FALSE
-        ridge.val <- ridge[i]*tyw[1,i][1]/NZD(tww[,,i][1,1])
-        W[i,, drop = FALSE] %*% tryCatch(solve(tww[,,i]+diag(rep(ridge[i],nc)),
-                tyw[,i]+c(ridge.val,rep(0,nc-1)),tol=.Machine$double.eps),
+        ridge.lc[i] <- ridge[i]*tyw[1,i][1]/NZD(tww[,,i][1,1])
+        W[i,, drop = FALSE] %*% tryCatch(chol2inv(chol(tww[,,i]+diag(rep(ridge[i],nc))))%*%tyw[,i],
                 error = function(e){
                   ridge[i] <<- ridge[i]+epsilon
                   doridge[i] <<- TRUE
@@ -1571,13 +1593,17 @@ minimand.cv.aic <- function(bws=NULL,
                 })
       }
 
+      ## Shrinking towards the local constant mean is accomplished via
+      ## ridge.lc[i] which is ridge[i] times the local constant
+      ## estimator
+
       while(any(doridge)){
         ii <- (1:n)[doridge]
-        ghat[ii] <- sapply(ii, ridger)
+        ghat[ii] <- (1-ridge[i])*sapply(ii, ridger) + ridge.lc[i]
       }
 
       trH <- kernel.i.eq.j*sum(sapply(1:n,function(i){
-        W[i,, drop = FALSE] %*% chol2inv(chol(tww[,,i]+diag(rep(ridge[i],nc)))) %*% t(W[i,, drop = FALSE])
+        (1-ridge[i]) * W[i,, drop = FALSE] %*% chol2inv(chol(tww[,,i]+diag(rep(ridge[i],nc)))) %*% t(W[i,, drop = FALSE]) + ridge[i]/NZD(tww[,,i][1,1])
       }))
 
       aic.penalty <- (1+trH/n)/(1-(trH+2)/n)
@@ -1604,7 +1630,7 @@ minimand.cv.aic <- function(bws=NULL,
 ## Note that for the function below which uses NOMAD for optimization
 ## we cross-validate on scale factors throughout (i.e. bandwidths for
 ## continuous predictors are scaled according to
-## sd.robust()*length(ydat)^{-1/(num.numeric+2*ckerorder)}). We adjust
+## scale.robust()*length(ydat)^{-1/(num.numeric+2*ckerorder)}). We adjust
 ## the upper bounds for the categorical variables accordingly (i.e. 1
 ## and (c-1)/c). This is done so that the grid search takes place on a
 ## _somewhat_ common scale and also allows us to sidestep the issue
@@ -2108,7 +2134,7 @@ glpcvNOMAD <- function(ydat=NULL,
     init.search.vals <- bandwidth
     for(i in 1:num.bw) {
       if(xdat.numeric[i]==TRUE && bwtype=="fixed") {
-        init.search.vals[i] <- bandwidth[i]/(sd.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)})
+        init.search.vals[i] <- bandwidth[i]/(scale.robust(xdat[,i])*length(ydat)^{-1/(num.numeric+2*ckerorder)})
       }
       if(xdat.numeric[i]!=TRUE) {
         init.search.vals[i] <- bandwidth[i]*bandwidth.scale.categorical
@@ -2221,7 +2247,7 @@ glpcvNOMAD <- function(ydat=NULL,
 
   if(bwtype=="fixed") {
     for(i in 1:num.numeric) {
-      sd.xdat <- sd.robust(xdat[,numeric.index[i]])
+      sd.xdat <- scale.robust(xdat[,numeric.index[i]])
       bw.opt[numeric.index[i]] <- bw.opt[numeric.index[i]]*sd.xdat*length(ydat)^{-1/(num.numeric+2*ckerorder)}
     }
   }
