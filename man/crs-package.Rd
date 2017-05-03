@@ -77,8 +77,8 @@
 
   I would like to gratefully acknowledge support from the Natural
   Sciences and Engineering Research Council of Canada
-  (\url{http://www.nserc.ca}), the Social Sciences and Humanities
-  Research Council of Canada (\url{http://www.sshrc.ca}), and the Shared
+  (\url{http://www.nserc-crsng.gc.ca}), the Social Sciences and Humanities
+  Research Council of Canada (\url{http://www.sshrc-crsh.gc.ca}), and the Shared
   Hierarchical Academic Research Computing Network
   (\url{http://www.sharcnet.ca}).
   
@@ -88,9 +88,9 @@
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
 		Theory and Practice,} Princeton University Press.
 
-  Ma, S. and J.S. Racine and L. Yang (under revision), \dQuote{Spline
+  Ma, S. and J.S. Racine and L. Yang (2015), \dQuote{Spline
   Regression in the Presence of Categorical Predictors,} Journal of
-  Applied Econometrics.
+  Applied Econometrics, Volume 30, 705-717.
 
   Ma, S. and J.S. Racine (2013), \dQuote{Additive Regression
   Splines with Irrelevant Categorical and Continuous Regressors,}

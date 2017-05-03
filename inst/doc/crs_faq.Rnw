@@ -1,4 +1,4 @@
-%% $Id: crs_faq.tex,v 1.34 2014/01/21 16:02:45 jracine Exp jracine $
+%% $Id: crs_faq.tex,v 1.37 2017/04/29 16:29:38 jracine Exp jracine $
 
 %\VignetteIndexEntry{Frequently Asked Questions (crs)}
 %\VignetteDepends{crs}
@@ -53,7 +53,7 @@ to others, kindly email me the relevant information and I will
 incorporate it into this FAQ.
 
 This FAQ refers to the most recent version, which as of this writing
-is 0.15-24. Kindly update your version should you not be using the
+is 0.15-26. Kindly update your version should you not be using the
 most current (from within R, \texttt{update.packages()} ought to do
 it, though also see \ref{update} below.). See the appendix in this
 file for cumulative changes between this and previous versions of the
@@ -99,7 +99,7 @@ A BibTeX entry for LaTeX users is
   Documentation/Manuals (\url{http://cran.r-project.org/manuals.html})
   where you will discover a wealth of documentation for \texttt{R} users
   of all levels. See also the \texttt{R} task views summary page
-  (\url{http://cran.nedmirror.nl/web/views/index.html}) for
+  (\url{http://cran.r-project.org/web/views}) for
   information grouped under field of interest. A few documents that I
   mention to my students which are tailored to econometricians include
   \url{http://cran.r-project.org/doc/contrib/Verzani-SimpleR.pdf},
@@ -628,11 +628,48 @@ Note that for direct calls to \texttt{snomadr} you instead need to set
 \texttt{opts=list("DISPLAY\_DEGREE"=0)} (see \texttt{?snomadr} for
 details).
 
+\subsection{How can I retrieve knots used for each predictor when
+  knots are selected via cross-validation}
+
+ 
+It depends on whether you use uniform or quantile knots. If you have a
+model with two predictors and you are using uniform knots, for the
+first predictor (presumed to be named \texttt{x1}) the knots will be
+\begin{verbatim} 
+seq(min(x1),max(x1),length=model$segments[1]+1)
+\end{verbatim}
+while if you are using quantile knots the knots will be
+\begin{verbatim} 
+quantile(x1,probs=seq(0,1,length=model$segments[1]+1))
+\end{verbatim}
+For the second predictor use \texttt{x2} and
+\texttt{model\$segments[2]} and so forth.
+
 \bibliographystyle{plain} \bibliography{crs_faq}
 
 \clearpage
 
 \appendix
+
+\section*{Changes from Version 0.15-25 to 0.15-26 [29-April-2017]}
+
+\begin{itemize}
+
+\item Zhenghua patched up issues arising with windows build
+
+\item \texttt{crs\_init.c} attempts to deal with registration issue/note
+
+\end{itemize}
+
+\section*{Changes from Version 0.15-24 to 0.15-25 [29-Apr-2017]}
+
+\begin{itemize}
+
+\item Fixed glitch that could potentially arise when computing derivatives and multiple predictors are assigned degree 0 when using the glp basis
+
+\item Updated NOMAD to latest version (3.8, released March 2017)
+
+\end{itemize}
 
 \section*{Changes from Version 0.15-23 to 0.15-24 [18-Dec-2014]}
 

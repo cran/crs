@@ -8,7 +8,7 @@
     one (1) dimensional dependent variable on an \code{r}-dimensional
     vector of continuous and categorical
     (\code{\link{factor}}/\code{\link{ordered}}) predictors (Ma and
-    Racine (2013), Ma, Racine and Yang (under revision)).}
+    Racine (2013), Ma, Racine and Yang (2015)).}
 
 \usage{
 crs(\dots)
@@ -60,9 +60,9 @@ crs(\dots)
     initial.mesh.size.real = "r1.0e-01",
     initial.mesh.size.integer = "1",
     min.mesh.size.real = paste(sqrt(.Machine$double.eps)),
-    min.mesh.size.integer = paste(sqrt(.Machine$double.eps)),
+    min.mesh.size.integer = 1, 
     min.poll.size.real = paste(sqrt(.Machine$double.eps)),
-    min.poll.size.integer = paste(sqrt(.Machine$double.eps)),
+    min.poll.size.integer = 1, 
     opts=list(),
     nmulti = 5,
     tau = NULL,
@@ -482,9 +482,9 @@ in \code{x} are included or omitted from the resulting estimate }
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
     Theory and Practice,} Princeton University Press.
 
-  Ma, S. and J.S. Racine and L. Yang (under revision), \dQuote{Spline
+  Ma, S. and J.S. Racine and L. Yang (2015), \dQuote{Spline
   Regression in the Presence of Categorical Predictors,} Journal of
-  Applied Econometrics.
+  Applied Econometrics, Volume 30, 705-717.
 
   Ma, S. and J.S. Racine (2013), \dQuote{Additive Regression
   Splines with Irrelevant Categorical and Continuous Regressors,}

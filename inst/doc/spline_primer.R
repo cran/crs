@@ -20,7 +20,7 @@ plot(x,B(x,b0,b1,b2),ylab="B(x)",type="l",lwd=2,cex.lab=1.25)
 
 
 ###################################################
-### code chunk number 3: spline_primer.Rnw:216-221
+### code chunk number 3: spline_primer.Rnw:225-230
 ###################################################
 Bernstein <- function(n,i,x) { factorial(n)/(factorial(n-i)*factorial(i))*(1-x)^{n-i}*x^i }
 x <- seq(0,1,length=100)
@@ -30,7 +30,7 @@ for(i in 1:degree) lines(x,Bernstein(degree,i,x),lty=i+1,lwd=2,col=i+1)
 
 
 ###################################################
-### code chunk number 4: spline_primer.Rnw:365-374
+### code chunk number 4: spline_primer.Rnw:374-383
 ###################################################
 degree <- 3
 m <- degree+1
@@ -44,7 +44,7 @@ matplot(x,B,type="l",lwd=2)
 
 
 ###################################################
-### code chunk number 5: spline_primer.Rnw:376-379
+### code chunk number 5: spline_primer.Rnw:385-388
 ###################################################
 deriv <- 1
 B.deriv <- gsl.bs(x,degree=degree,nbreak=nbreak,deriv=deriv,intercept=TRUE)

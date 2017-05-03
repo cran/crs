@@ -35,9 +35,9 @@ krscvNOMAD(xz,
            initial.mesh.size.real = "r0.1",
            initial.mesh.size.integer = "1",
            min.mesh.size.real = paste("r",sqrt(.Machine$double.eps),sep=""),
-           min.mesh.size.integer = paste("r",sqrt(.Machine$double.eps),sep=""),
+           min.mesh.size.integer = "1", 
            min.poll.size.real = paste("r",sqrt(.Machine$double.eps),sep=""),
-           min.poll.size.integer = paste("r",sqrt(.Machine$double.eps),sep=""),
+           min.poll.size.integer = "1", 
            opts=list(),
            nmulti = 0,
            tau = NULL,
@@ -268,9 +268,9 @@ krscvNOMAD(xz,
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
     Theory and Practice,} Princeton University Press.
 
-  Ma, S. and J.S. Racine and L. Yang (under revision), \dQuote{Spline
+  Ma, S. and J.S. Racine and L. Yang (2015), \dQuote{Spline
   Regression in the Presence of Categorical Predictors,} Journal of
-  Applied Econometrics.
+  Applied Econometrics, Volume 30, 705-717.
 
   Ma, S. and J.S. Racine (2013), \dQuote{Additive Regression
   Splines with Irrelevant Categorical and Continuous Regressors,}

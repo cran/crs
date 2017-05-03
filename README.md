@@ -1,10 +1,12 @@
 # crs
 
+![CRAN downloads](https://cranlogs.r-pkg.org/badges/grand-total/crs)
+
 This is the R package `crs' (Categorical Regression Splines) written and maintained by Jeffrey S. Racine (racinej@mcmaster.ca) with the invaluable assistance of Zhenghua Nie.
 
 ## Installation
 
-You can install the stable version on [CRAN](http://cran.r-project.org/package=crs):
+You can install the stable version on [CRAN](https://cran.r-project.org/package=crs):
 
 ```r
 install.packages('crs', dependencies = TRUE)
@@ -16,7 +18,7 @@ Or download the [zip ball](https://github.com/JeffreyRacine/R-Package-crs/zipbal
 library(devtools); install_github('R-Package-crs', 'JeffreyRacine')
 ```
 
-Note Windows users have to first install [Rtools](http://cran.r-project.org/bin/windows/Rtools), while OS X users have to first install [Xcode](https://itunes.apple.com/us/app/xcode/id497799835) and the command line tools (in OS X 10.9 or higher, once you have Xcode installed, open a terminal and run xcode-select --install).
+Note Windows users have to first install [Rtools](https://cran.r-project.org/bin/windows/Rtools/), while OS X users have to first install [Xcode](https://itunes.apple.com/us/app/xcode/id497799835) and the command line tools (in OS X 10.9 or higher, once you have Xcode installed, open a terminal and run xcode-select --install).
 
-For more information on this project please visit the maintainer's website (http://www.economics.mcmaster.ca/faculty/racinej).
+For more information on this project please visit the maintainer's website (https://www.socialsciences.mcmaster.ca/people/racinej).
 
