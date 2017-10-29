@@ -619,7 +619,7 @@ npglpreg.formula <- function(formula,
                              initial.mesh.size.integer=1,
                              min.mesh.size.real=sqrt(.Machine$double.eps),
                              min.mesh.size.integer=1, 
-                             min.poll.size.real=sqrt(.Machine$double.eps),
+                             min.poll.size.real=1,
                              min.poll.size.integer=1, 
                              opts=list(),
                              restart.from.min=FALSE,
@@ -1668,7 +1668,7 @@ glpcvNOMAD <- function(ydat=NULL,
                        initial.mesh.size.integer=1,
                        min.mesh.size.real=sqrt(.Machine$double.eps),
                        min.mesh.size.integer=1, 
-                       min.poll.size.real=sqrt(.Machine$double.eps),
+                       min.poll.size.real=1,
                        min.poll.size.integer=1, 
                        cv.shrink=TRUE,
                        cv.maxPenalty=sqrt(.Machine$double.xmax),
@@ -2002,6 +2002,11 @@ glpcvNOMAD <- function(ydat=NULL,
     INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.real
     MIN.MESH.SIZE[[i]] <- min.mesh.size.real
     MIN.POLL.SIZE[[i]] <- min.poll.size.real
+    if(is.integer(xdat[,i])) {
+        INITIAL.MESH.SIZE[[i]] <- initial.mesh.size.integer
+        MIN.MESH.SIZE[[i]] <- min.mesh.size.integer
+        MIN.POLL.SIZE[[i]] <- min.poll.size.integer
+    }
     ## Need to do integer search for numeric predictors when bwtype is
     ## a nearest-neighbour, so set bbin appropriately.
     if(xdat.numeric[i]==TRUE && bwtype!="fixed") {
