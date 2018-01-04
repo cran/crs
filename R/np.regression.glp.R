@@ -1528,7 +1528,7 @@ minimand.cv.aic <- function(bws=NULL,
 
       aic.penalty <- (1+trH/n)/(1-(trH+2)/n)
 
-      if (!any(ghat == cv.maxPenalty) && (aic.penalty > 0)){
+      if (!any(is.na(ghat)) && !any(ghat == cv.maxPenalty) && (aic.penalty > 0)){
         fv <- log(mean((ydat-ghat)^2)) + aic.penalty
       } else {
         fv <- cv.maxPenalty
@@ -1608,7 +1608,7 @@ minimand.cv.aic <- function(bws=NULL,
 
       aic.penalty <- (1+trH/n)/(1-(trH+2)/n)
 
-      if (!any(ghat == cv.maxPenalty) && (aic.penalty > 0)){
+      if (!any(is.na(ghat)) && !any(ghat == cv.maxPenalty) && (aic.penalty > 0)){
         fv <- log(mean((ydat-ghat)^2)) + aic.penalty
       } else {
         fv <- cv.maxPenalty
@@ -2543,7 +2543,7 @@ plot.npglpreg <- function(x,
 
       if(plot.behavior!="data") {
 
-        if(!is.null(object$num.categorical)||(object$num.numeric>1)) par(mfrow=dim.plot(NCOL(object$x)))
+        if(!is.null(object$num.categorical)||(object$num.numeric>1)) par(mfrow=n2mfrow(NCOL(object$x)))
 
         for(i in 1:NCOL(object$x)) {
 
@@ -2780,7 +2780,7 @@ plot.npglpreg <- function(x,
 
     if(plot.behavior!="data") {
 
-      if(!is.null(object$num.categorical)||(object$num.numeric>1)) par(mfrow=dim.plot(NCOL(object$x)))
+      if(!is.null(object$num.categorical)||(object$num.numeric>1)) par(mfrow=n2mfrow(NCOL(object$x)))
 
       for(i in 1:NCOL(object$x)) {
 
