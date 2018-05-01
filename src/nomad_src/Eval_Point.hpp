@@ -53,13 +53,15 @@
 #include "Cache_File_Point.hpp"
 #include "Set_Element.hpp"
 
-#ifdef WINDOWS
-#ifndef isnan
-inline bool isnan ( double x ) { return x != x; }
+//#ifdef WINDOWS
+#ifndef CRS_ISNAN__
+#define CRS_ISNAN__
+inline bool crs_isnan ( double x ) { return x != x; }
 #endif
-#endif
+//#endif
 
 namespace NOMAD {
+		
     
     /// Class for the representation of an evaluation point.
     /**

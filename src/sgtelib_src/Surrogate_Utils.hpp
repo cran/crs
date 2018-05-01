@@ -35,9 +35,9 @@
 #ifdef _MSC_VER
 #pragma warning(disable:4996)
 #include <io.h>
-#define isnan(x) _isnan(x)
+//#define isnan(x) _isnan(x)
 #define isdigit(x) _isdigit(x)
-#define isinf(x) (!_finite(x))
+//#define isinf(x) (!_finite(x))
 
 typedef struct timeval {
      long tv_sec;
@@ -49,19 +49,29 @@ typedef struct timeval {
 #ifdef __MINGW32__
 #include <_timeval.h>
 #include <unistd.h>
-#define isnan(x) _isnan(x)
+//#define isnan(x) _isnan(x)
 #define isdigit(x) _isdigit(x)
-#define isinf(x) (!_finite(x))
+//#define isinf(x) (!_finite(x))
 #else
 #include <unistd.h>
 #endif
 #endif
 
+#ifndef CRS_ISNAN__
+#define CRS_ISNAN__
+inline bool crs_isnan ( double x ) { return x != x; }
+#endif
+
+#ifndef __CRS_ISINF__
+#define __CRS_ISINF__
+inline bool crs_isinf (double x) { return !crs_isnan(x) && crs_isnan(x - x); }
+#endif
 
 #include <cstring>
 #include <cctype>
 
 namespace SGTELIB {
+
 
   enum distance_t {
     DISTANCE_NORM2 ,

@@ -1,3 +1,11 @@
+Changes from Version 0.15-30 to 0.15-31 [01-May-2018]
+
+* basis="auto" was default, doc/code discrepancy fixed
+
+* Hattip to Thibault Vatter who patched an issue with weights not being functional in crsiv.R
+
+* Fixed issue with compiler compliance to support ICC and retain backwards compatability with MSVC C++
+
 Changes from Version 0.15-29 to 0.15-30 [03-Dec-2017]
 
 * dim.plot() replaced by n2mfrow() for determining layout of multiple
