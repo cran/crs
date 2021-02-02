@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------------------*/
 /*  sgtelib - A surrogate model library for derivative-free optimization               */
-/*  Version 2.0.1                                                                      */
+/*  Version 2.0.2                                                                      */
 /*                                                                                     */
 /*  Copyright (C) 2012-2017  Sebastien Le Digabel - Ecole Polytechnique, Montreal      */ 
 /*                           Bastien Talgorn - McGill University, Montreal             */
@@ -45,9 +45,9 @@ namespace SGTELIB {
   protected:
 
     int _q; // Nb of basis function
-    SGTELIB::Matrix _M; // Monomes
-    SGTELIB::Matrix _H; // Design matrix
-    SGTELIB::Matrix _Ai; // Inverse of Ht*H
+    SGTELIB::Matrix M_M; // Monomes
+    SGTELIB::Matrix H_H; // Design matrix
+    SGTELIB::Matrix Ai_Ai; // Inverse of Ht*H
     SGTELIB::Matrix _alpha; // Coefficients
 
     virtual const SGTELIB::Matrix compute_design_matrix ( const SGTELIB::Matrix Monomes, 

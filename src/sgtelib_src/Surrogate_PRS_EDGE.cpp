@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------------------*/
 /*  sgtelib - A surrogate model library for derivative-free optimization               */
-/*  Version 2.0.1                                                                      */
+/*  Version 2.0.2                                                                      */
 /*                                                                                     */
 /*  Copyright (C) 2012-2017  Sebastien Le Digabel - Ecole Polytechnique, Montreal      */ 
 /*                           Bastien Talgorn - McGill University, Montreal             */
@@ -32,7 +32,7 @@ SGTELIB::Surrogate_PRS_EDGE::Surrogate_PRS_EDGE ( SGTELIB::TrainingSet & trainin
                                                   SGTELIB::Surrogate_Parameters param) :
   SGTELIB::Surrogate_PRS ( trainingset , param ){
   #ifdef SGTELIB_DEBUG
-    std::cout << "constructor PRS_EDGE\n";
+    SGTELIB::rout << "constructor PRS_EDGE\n";
   #endif
 }//
 
@@ -69,10 +69,10 @@ bool SGTELIB::Surrogate_PRS_EDGE::build_private ( void ) {
   if ( (_q>pvar-1) && (_param.get_ridge()==0) ) return false;
 
   // Compute the exponents of the basis functions
-  _M = get_PRS_monomes(nvar,_param.get_degree());
+  M_M = get_PRS_monomes(nvar,_param.get_degree());
 
   // DESIGN MATRIX H
-  _H = compute_design_matrix ( _M , get_matrix_Xs() );
+  H_H = compute_design_matrix ( M_M , get_matrix_Xs() );
 
   return compute_alpha();   
 }//

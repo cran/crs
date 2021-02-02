@@ -7,7 +7,7 @@
 \description{
   
   \code{npglpreg} computes a generalized local polynomial kernel
-    regression estimate (Hall and Racine (forthcoming)) of a one (1)
+    regression estimate (Hall and Racine (2015)) of a one (1)
     dimensional dependent variable on an \code{r}-dimensional vector of
     continuous and categorical
     (\code{\link{factor}}/\code{\link{ordered}}) predictors.
@@ -254,7 +254,7 @@ for each dimension of the continuous \code{x} in \code{txdat}}
 
   \item{bandwidth.scale.categorical}{ the upper end for the rescaled
   bandwidths for the categorical predictors (default
-  \code{bandwidth.scale.categorical=1.0e+04}) - the aim is to `even up'
+  \code{bandwidth.scale.categorical=1.0e+04}) - the aim is to \sQuote{even up}
   the scale of the search parameters as much as possible, so when very
   large scale factors are selected for the continuous predictors, a
   larger value may improve search}
@@ -419,10 +419,11 @@ for each dimension of the continuous \code{x} in \code{txdat}}
 
   Doksum, K. and A. Samarov (1995), \dQuote{Nonparametric Estimation of
   Global Functionals and a Measure of the Explanatory Power of
-  Covariates in Regression,} The Annals of Statistics, 23 1443-1473.
+  Covariates in Regression,} The Annals of Statistics, 23, 1443-1473.
 
-  Hall, P. and J.S. Racine (forthcoming), \dQuote{Cross-Validated
-  Generalized Local Polynomial Regression,} Journal of Econometrics.
+  Hall, P. and J.S. Racine (2015), \dQuote{Infinite Order
+  Cross-Validated Local Polynomial Regression,} Journal of Econometrics,
+  185, 510-525.
 
   Li, Q. and J.S. Racine (2007), \emph{Nonparametric Econometrics:
   Theory and Practice,} Princeton University Press.

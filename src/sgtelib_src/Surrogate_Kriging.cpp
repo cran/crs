@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------------------*/
 /*  sgtelib - A surrogate model library for derivative-free optimization               */
-/*  Version 2.0.1                                                                      */
+/*  Version 2.0.2                                                                      */
 /*                                                                                     */
 /*  Copyright (C) 2012-2017  Sebastien Le Digabel - Ecole Polytechnique, Montreal      */ 
 /*                           Bastien Talgorn - McGill University, Montreal             */
@@ -32,14 +32,14 @@
 SGTELIB::Surrogate_Kriging::Surrogate_Kriging ( SGTELIB::TrainingSet & trainingset,
                                                 SGTELIB::Surrogate_Parameters param) :
   SGTELIB::Surrogate ( trainingset , param ),
-  _R                 ( "R",0,0             ),  
-  _Ri                ( "Ri",0,0            ),  
-  _H                 ( "H",0,0             ),
+  R_R                 ( "R",0,0             ),  
+  R_Ri                ( "Ri",0,0            ),  
+  H_H                 ( "H",0,0             ),
   _alpha             ( "alpha",0,0         ),
   _beta              ( "beta",0,0          ),
   _var               ( "var",0,0           ){
   #ifdef SGTELIB_DEBUG
-    std::cout << "constructor Kriging\n";
+    SGTELIB::rout << "constructor Kriging\n";
   #endif
 
 }//
@@ -67,7 +67,7 @@ void SGTELIB::Surrogate_Kriging::display_private ( std::ostream & out ) const {
 /*--------------------------------------*/
 bool SGTELIB::Surrogate_Kriging::init_private ( void ) {
   #ifdef SGTELIB_DEBUG
-    std::cout << "Surrogate_Kriging : init_private\n";
+    SGTELIB::rout << "Surrogate_Kriging : init_private\n";
   #endif
   return true;
 }//
@@ -85,9 +85,9 @@ bool SGTELIB::Surrogate_Kriging::build_private ( void ) {
   const int nvar = _trainingset.get_nvar();
   const SGTELIB::Matrix & Zs = get_matrix_Zs();
 
-  _R = compute_covariance_matrix(get_matrix_Xs());
-  _H = SGTELIB::Matrix::ones(_p,1);
-  _Ri = _R.lu_inverse(&_detR);
+  R_R = compute_covariance_matrix(get_matrix_Xs());
+  H_H = SGTELIB::Matrix::ones(_p,1);
+  R_Ri = R_R.lu_inverse(&_detR);
 
   if (_detR<=0){
     _detR = +INF;
@@ -95,11 +95,11 @@ bool SGTELIB::Surrogate_Kriging::build_private ( void ) {
   }
 
 
-  //std::cout << "detR = "<< _detR << "\n";
-  const SGTELIB::Matrix HRi  = _H.transpose()*_Ri;
-  const SGTELIB::Matrix HRiH = HRi*_H;
+  //SGTELIB::rout << "detR = "<< _detR << "\n";
+  const SGTELIB::Matrix HRi  = H_H.transpose()*R_Ri;
+  const SGTELIB::Matrix HRiH = HRi*H_H;
   _beta = HRiH.cholesky_inverse() * HRi * Zs;
-  _alpha = _Ri*(Zs-_H*_beta);
+  _alpha = R_Ri*(Zs-H_H*_beta);
 
   _beta.set_name("beta");
   _alpha.set_name("alpha");
@@ -110,8 +110,8 @@ bool SGTELIB::Surrogate_Kriging::build_private ( void ) {
   SGTELIB::Matrix Vj;
   for (int j=0 ; j<mvar ; j++){
     Zj = Zs.get_col(j);
-    Zj = (Zj-_H*_beta.get_col(j));
-    Vj = Zj.transpose() * _Ri * Zj;
+    Zj = (Zj-H_H*_beta.get_col(j));
+    Vj = Zj.transpose() * R_Ri * Zj;
     v = Vj.get(0,0) / (_p-nvar);
     if (v<0) return false;
     _var.set(0,j,v);
@@ -190,13 +190,13 @@ void SGTELIB::Surrogate_Kriging::predict_private (const SGTELIB::Matrix & XXs,
   else std = new SGTELIB::Matrix ("std",pxx,_m);
 
   double rRr;
-  const double HRH = (_H.transpose()*_Ri*_H).get(0,0);
+  const double HRH = (H_H.transpose()*R_Ri*H_H).get(0,0);
 
   double v;
   SGTELIB::Matrix ri;
   for (i=0 ; i<pxx ; i++){
     ri = r.get_col(i);
-    rRr = (ri.transpose()*_Ri*ri).get(0,0);
+    rRr = (ri.transpose()*R_Ri*ri).get(0,0);
     if (fabs(rRr-1)<EPSILON){
       v = fabs(rRr-1);
     }
@@ -256,32 +256,32 @@ void SGTELIB::Surrogate_Kriging::predict_private (const SGTELIB::Matrix & XXs,
 bool SGTELIB::Surrogate_Kriging::compute_cv_values (void){
   check_ready(__FILE__,__FUNCTION__,__LINE__);
 
-  if ((_Zvs) && (_Svs)) return true;
+  if ((Z_Zvs) && (S_Svs)) return true;
 
   const SGTELIB::Matrix & Zs = get_matrix_Zs();
-  const SGTELIB::Matrix RiH = _Ri*_H;
-  const SGTELIB::Matrix Q = _Ri - RiH*( _H.transpose()*_Ri*_H)*RiH.transpose();
+  const SGTELIB::Matrix RiH = R_Ri*H_H;
+  const SGTELIB::Matrix Q = R_Ri - RiH*( H_H.transpose()*R_Ri*H_H)*RiH.transpose();
   const SGTELIB::Matrix dQ = Q.diag_inverse();
   
   // Init matrices
-  if ( !  _Zvs){
-    _Zvs = new SGTELIB::Matrix;
-    *_Zvs = Zs - SGTELIB::Matrix::diagA_product(dQ,Q)*Zs;
-    _Zvs->replace_nan(+INF);
-    _Zvs->set_name("Zvs");
+  if ( !  Z_Zvs){
+    Z_Zvs = new SGTELIB::Matrix;
+    *Z_Zvs = Zs - SGTELIB::Matrix::diagA_product(dQ,Q)*Zs;
+    Z_Zvs->replace_nan(+INF);
+    Z_Zvs->set_name("Zvs");
   }
     
-  if ( !  _Svs){
-    _Svs = new SGTELIB::Matrix ("Svs",_p,_m);
+  if ( !  S_Svs){
+    S_Svs = new SGTELIB::Matrix ("Svs",_p,_m);
     double q;
     for (int i=0 ; i<_p ; i++){
       q = dQ.get(i,i);
       for (int j=0 ; j<_m ; j++){
-        _Svs->set(i,j,sqrt(_var[j]*q));
+        S_Svs->set(i,j,sqrt(_var[j]*q));
       }
     }
-    _Svs->replace_nan(+INF);
-    _Svs->set_name("Svs");
+    S_Svs->replace_nan(+INF);
+    S_Svs->set_name("Svs");
   }
   return true;
 }//
@@ -292,11 +292,11 @@ bool SGTELIB::Surrogate_Kriging::compute_cv_values (void){
 /*--------------------------------------*/
 const SGTELIB::Matrix * SGTELIB::Surrogate_Kriging::get_matrix_Zvs (void){
   compute_cv_values();
-  return _Zvs;
+  return Z_Zvs;
 }
 const SGTELIB::Matrix * SGTELIB::Surrogate_Kriging::get_matrix_Svs (void){
   compute_cv_values();
-  return _Svs;
+  return S_Svs;
 }
 
 
@@ -305,14 +305,15 @@ const SGTELIB::Matrix * SGTELIB::Surrogate_Kriging::get_matrix_Svs (void){
 /*--------------------------------------*/
 void SGTELIB::Surrogate_Kriging::compute_metric_linv (void){
   check_ready(__FILE__,__FUNCTION__,__LINE__);
-  if ( !  _metric_linv){
+  if ( !is_defined(SGTELIB::METRIC_LINV) ){
     #ifdef SGTELIB_DEBUG
-      std::cout << "Compute _metric_linv\n";
+      SGTELIB::rout << "Compute metric linv\n";
     #endif
-    _metric_linv = new double [_m];
+    SGTELIB::Matrix v = SGTELIB::Matrix("LINV",0,_m);
     for (int j=0 ; j<_m ; j++){
-      _metric_linv[j] = pow(_var[j],_p)*_detR;
+      v.set(0,j, pow(_var[j],_p)*_detR );
     }
+    _metrics[SGTELIB::METRIC_LINV] = v;
   }
 
 }//

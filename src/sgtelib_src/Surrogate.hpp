@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------------------*/
 /*  sgtelib - A surrogate model library for derivative-free optimization               */
-/*  Version 2.0.1                                                                      */
+/*  Version 2.0.2                                                                      */
 /*                                                                                     */
 /*  Copyright (C) 2012-2017  Sebastien Le Digabel - Ecole Polytechnique, Montreal      */ 
 /*                           Bastien Talgorn - McGill University, Montreal             */
@@ -30,13 +30,13 @@
 #include "TrainingSet.hpp"
 #include "Kernel.hpp"
 #include "Surrogate_Parameters.hpp"
-
+#include <map>
 namespace SGTELIB {
 
   /*--------------------------------------*/
   /*             Surrogate class          */
   /*--------------------------------------*/
-  class Surrogate {
+  class DLL_API Surrogate {
 
   // Surrogate Ensemble is a friend, so that it can access to private and protected 
   // prediction methods of other derived classed of Surrogate_Ensemble
@@ -68,31 +68,19 @@ namespace SGTELIB {
     // Predictions
     // _Zhs: Prediction of the model in the training points
     // (used to compute emax, rmse, eotp, linv)
-    SGTELIB::Matrix * _Zhs; 
-    SGTELIB::Matrix * _Shs; // Predictive std on the training points
+    SGTELIB::Matrix * Z_Zhs; 
+    SGTELIB::Matrix * S_Shs; // Predictive std on the training points
 
     // _Zvs: Cross-Validation prediction of the model in the training points
     // (used to compute rmsecv, oecv)
-    SGTELIB::Matrix * _Zvs; 
-    SGTELIB::Matrix * _Svs; // Cross-validation std on the training points
+    SGTELIB::Matrix * Z_Zvs; 
+    SGTELIB::Matrix * S_Svs; // Cross-validation std on the training points
 
     // List of points used to build the model
     std::list<int> _selected_points;
 
-    // metrics
-    double * _metric_emax;
-    double * _metric_emaxcv;
-    double * _metric_rmse;
-    double * _metric_rmsecv;
-    double * _metric_oe;
-    double * _metric_oecv;
-    double * _metric_linv;
-    double _metric_aoe;
-    double _metric_aoecv;
-    double _metric_efioe;
-    double _metric_efioecv;
-    double _metric_armse;
-    double _metric_armsecv;
+    // Map to store all the metrics
+    std::map< metric_t , SGTELIB::Matrix > _metrics;
 
     // psize_max : Larger value of psize that led to a success
     // in the previous parameter optimization.
@@ -103,35 +91,24 @@ namespace SGTELIB {
     bool _display;
 
     // private affectation operator:
-    Surrogate & operator = ( const Surrogate & );
+    // Surrogate & operator = ( const Surrogate & );
 
     // build model (private):
     virtual bool build_private (void) = 0;
     virtual bool init_private  (void);
 
     // Compute metrics
-    void compute_metric_emax     (void);
-    void compute_metric_emaxcv   (void);
-    void compute_metric_rmse     (void);
-    void compute_metric_rmsecv   (void);
-    void compute_metric_armse    (void);
-    void compute_metric_armsecv  (void);
-    void compute_metric_oe       (void);
-    void compute_metric_oecv     (void);
-    void compute_metric_aoe      (void);
-    void compute_metric_aoecv    (void);
-    void compute_metric_efioe    (void);
-    void compute_metric_efioecv  (void);
+    bool compute_metric ( const metric_t mt );
     virtual void compute_metric_linv (void);
-    //virtual void compute_metric_eficv (void);
 
     // Function used to compute "_metric_oe" and "_metric_oecv"
-    void compute_order_error ( const SGTELIB::Matrix * const Zpred , 
-                               double * m                   );
-    double compute_aggregate_order_error ( const SGTELIB::Matrix * const Zpred );
+    SGTELIB::Matrix compute_order_error  ( const SGTELIB::Matrix & Zpred );
+    double compute_aggregate_order_error ( const SGTELIB::Matrix & Zpred );
 
-    SGTELIB::Matrix compute_efi( const SGTELIB::Matrix Zs,
-                                 const SGTELIB::Matrix Ss  );
+    SGTELIB::Matrix compute_efi( const SGTELIB::Matrix & Zs,
+                                 const SGTELIB::Matrix & Ss );
+
+    SGTELIB::Matrix compute_fh ( const SGTELIB::Matrix & Zs );
 
     // predict model (private):
     virtual void predict_private ( const SGTELIB::Matrix & XXs,
@@ -142,7 +119,6 @@ namespace SGTELIB {
  
     virtual void predict_private ( const SGTELIB::Matrix & XXs,
                                          SGTELIB::Matrix * ZZs) = 0; 
-
 
     // Display private 
     virtual void display_private ( std::ostream & out ) const = 0;
@@ -184,7 +160,10 @@ namespace SGTELIB {
     void check_ready (void) const;
 
     // Get metrics
-    double get_metric (SGTELIB::metric_t mt , int j);
+    SGTELIB::Matrix get_metric (SGTELIB::metric_t mt);
+    double          get_metric (SGTELIB::metric_t mt , int j);
+    bool is_defined(const SGTELIB::metric_t mt);
+    bool is_defined(const SGTELIB::metric_t mt, const int j);
 
     // construct:
     bool build (void);
@@ -216,7 +195,7 @@ namespace SGTELIB {
     SGTELIB::Matrix get_distance_to_closest ( const SGTELIB::Matrix & XX ) const;
 
     bool is_ready                (void) const {return _ready;};
-    void display_trainingset     (void) const {_trainingset.build();_trainingset.display(std::cout);};
+    void display_trainingset     (void) const {_trainingset.build();_trainingset.display(SGTELIB::rout);};
     SGTELIB::model_t get_type    (void) const {return _param.get_type();};
     std::string get_string       (void) const {return _param.get_string();};
     std::string get_short_string (void) const {return _param.get_short_string();};

@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------------------*/
 /*  sgtelib - A surrogate model library for derivative-free optimization               */
-/*  Version 2.0.1                                                                      */
+/*  Version 2.0.2                                                                      */
 /*                                                                                     */
 /*  Copyright (C) 2012-2017  Sebastien Le Digabel - Ecole Polytechnique, Montreal      */ 
 /*                           Bastien Talgorn - McGill University, Montreal             */
@@ -40,14 +40,15 @@ SGTELIB::Surrogate_LOWESS::Surrogate_LOWESS ( SGTELIB::TrainingSet & trainingset
   _q                 ( 0        ),
   _q_old             ( 99999999 ),
   _degree            ( 0        ),
-  _H                 ( NULL     ),
-  _W                 ( NULL     ),
-  _A                 ( NULL     ),
-  _HWZ               ( NULL     ),
+  H_H                 ( NULL     ),
+  W_W                 ( NULL     ),
+  A_A                 ( NULL     ),
+  HWZ_HWZ               ( NULL     ),
   _u                 ( NULL     ),
   _old_u             ( NULL     ),
   _old_x             ( NULL     ),
-  _ZZsi              ("ZZsi",0,0){
+  _x_multiple        ( NULL     ),
+  ZZsi_ZZsi              ("ZZsi",0,0){
   #ifdef SGTELIB_DEBUG
     SGTELIB::rout << "constructor LOWESS\n";
   #endif
@@ -59,39 +60,42 @@ SGTELIB::Surrogate_LOWESS::Surrogate_LOWESS ( SGTELIB::TrainingSet & trainingset
 /*--------------------------------------*/
 void SGTELIB::Surrogate_LOWESS::delete_matrices ( void ) {
 
-  if (_W) delete [] _W; 
-  _W = NULL;
+  if (W_W) delete [] W_W; 
+  W_W = NULL;
 
-  if (_u) delete []_u; 
+  if (_u) delete [] _u; 
   _u = NULL;
 
-  if (_old_u) delete [] _old_u; 
-  _old_u = NULL;
+  if (_x_multiple) delete [] _x_multiple;
+  _x_multiple = NULL;
 
-  if (_old_x) delete [] _old_x; 
-  _old_x = NULL;
+  #ifdef SGTELIB_LOWESS_DEV
+    if (_old_u) delete [] _old_u; 
+    _old_u = NULL;
 
+    if (_old_x) delete [] _old_x; 
+    _old_x = NULL;
+  #endif
 
   const int p = std::min(_p_old,_p);
-  if (_H){
-    for (int i=0 ; i<p ; i++) delete [] _H[i];
-    delete [] _H;
+  if (H_H){
+    for (int i=0 ; i<p ; i++) delete [] H_H[i];
+    delete [] H_H;
   }
-  _H = NULL;
-
+  H_H = NULL;
 
   const int q = std::min(_q_old,_q);
-  if (_A){
-    for (int i=0 ; i<q ; i++) delete [] _A[i];
-    delete [] _A;
+  if (A_A){
+    for (int i=0 ; i<q ; i++) delete [] A_A[i];
+    delete [] A_A;
   }
-  _A = NULL;
+  A_A = NULL;
 
-  if (_HWZ){
-    for (int i=0 ; i<q ; i++) delete [] _HWZ[i];
-    delete [] _HWZ;
+  if (HWZ_HWZ){
+    for (int i=0 ; i<q ; i++) delete [] HWZ_HWZ[i];
+    delete [] HWZ_HWZ;
   }
-  _HWZ = NULL;
+  HWZ_HWZ = NULL;
 }//
 
 
@@ -113,9 +117,9 @@ void SGTELIB::Surrogate_LOWESS::display_private ( std::ostream & out ) const {
 }//
 
 /*--------------------------------------*/
-/*               build                  */
+/*               init                   */
 /*--------------------------------------*/
-bool SGTELIB::Surrogate_LOWESS::build_private ( void ) {
+bool SGTELIB::Surrogate_LOWESS::init_private ( void ) {
   
   const int pvar = _trainingset.get_pvar(); 
 
@@ -153,51 +157,62 @@ bool SGTELIB::Surrogate_LOWESS::build_private ( void ) {
 
   delete_matrices();
 
-  if ( !  _W){
-    _W = new double [_p];
+  if ( ! W_W){
+    W_W = new double [_p];
   } 
-  if ( !  _A){
-    _A = new double * [_q];
-    for (int j=0 ; j<_q ; j++) _A[j] = new double [_q];
+  if ( ! A_A){
+    A_A = new double * [_q];
+    for (int j=0 ; j<_q ; j++) A_A[j] = new double [_q];
   }
-  if ( !  _H){
-    _H = new double * [_p];
-    for (int j=0 ; j<_p ; j++) _H[j] = new double [_q];
+  if ( ! H_H){
+    H_H = new double * [_p];
+    for (int j=0 ; j<_p ; j++) H_H[j] = new double [_q];
   }
-  if ( !  _HWZ){
-    _HWZ = new double * [_q];
-    for (int j=0 ; j<_q ; j++) _HWZ[j] = new double [_m];
+  if ( ! HWZ_HWZ){
+    HWZ_HWZ = new double * [_q];
+    for (int j=0 ; j<_q ; j++) HWZ_HWZ[j] = new double [_m];
   }
-  if ( !  _u){
+  if ( ! _u){
     _u = new double [_q];
     for (int i=0 ; i<_q ; i++) _u[i] = 0.0;
   }
-  if ( !  _old_u){
-    _old_u = new double [_q];
-    for (int i=0 ; i<_q ; i++) _old_u[i] = 0.0;
+  if ( ! _x_multiple){
+    _x_multiple = new bool [_m];
+    for (int j=0 ; j<_m ; j++) _x_multiple[j] = (_trainingset.get_X_nbdiff(j)>1);
   }
+
   #ifdef SGTELIB_LOWESS_DEV
-    if ( !  _old_x){
+    if ( ! _old_u){
+      _old_u = new double [_q];
+      for (int i=0 ; i<_q ; i++) _old_u[i] = 0.0;
+    }
+
+    if ( ! _old_x){
       _old_x = new double [_n];
       for (int i=0 ; i<_n ; i++) _old_x[i] = 0.0;
     }
   #endif
 
-  _ZZsi = SGTELIB::Matrix("ZZsi",1,_m);
+  ZZsi_ZZsi = SGTELIB::Matrix("ZZsi",1,_m);
   #ifdef SGTELIB_DEBUG
     SGTELIB::rout << "Line " << __LINE__ << "(End of private build)\n";
   #endif
 
   _q_old = _q;
-    
   // C.Tribes jan 17th, 2017 --- update _p_old to prevent memory leak
-    _p_old = _p;
+  _p_old = _p;
 
-  _ready = true;
   return true;   
 }//
 
 
+/*--------------------------------------*/
+/*               build                  */
+/*--------------------------------------*/
+bool SGTELIB::Surrogate_LOWESS::build_private ( void ) {
+  _ready = true;
+  return true;  
+}
 
 
 /*--------------------------------------*/
@@ -216,12 +231,12 @@ void SGTELIB::Surrogate_LOWESS::predict_private ( const SGTELIB::Matrix & XXs,
         SGTELIB::rout << "============================================\n";
       #endif
       predict_private_single ( XXs.get_row(i) );
-      ZZs->set_row( _ZZsi , i );
+      ZZs->set_row( ZZsi_ZZsi , i );
     }
   }
   else{
     predict_private_single ( XXs );
-    *ZZs = _ZZsi;
+    *ZZs = ZZsi_ZZsi;
   }
 }//
 
@@ -279,6 +294,9 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
 
 
 
+
+
+
   #ifdef SGTELIB_LOWESS_DEV
     // Write in a file the values of dq
     if (i_exclude==-1){
@@ -300,7 +318,7 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
   if (preset=="D"){
     // ========================================================
     // Distance only
-    for (i=0 ; i<_p ; i++) _W[i] = D.get(i);
+    for (i=0 ; i<_p ; i++) W_W[i] = D.get(i);
   }
   else if (preset=="DEN"){
     // ========================================================
@@ -309,36 +327,34 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
     i = 0;
     while (R.get(i)!=_q-1) i++;
     const double dq = 2.0*D.get(i);
-    for (i=0 ; i<_p ; i++) _W[i] = D.get(i)/dq;
+    for (i=0 ; i<_p ; i++) W_W[i] = D.get(i)/dq;
   }
   else if (preset=="DGN"){
     // ========================================================
     // Distance, normalized with Gamma method
     const double dq = pow(SGTELIB::gammacdfinv(double(_q)/double(p_divide),gamma_shape,gamma_scale),1./GAMMA_EXP);
-    for (i=0 ; i<_p ; i++) _W[i] = D.get(i)/dq;
+    for (i=0 ; i<_p ; i++) W_W[i] = D.get(i)/dq;
   }
   else if ( (preset=="RE") || (preset=="REN") ){
     // ========================================================
     // Rank, computed with empirical method
     const SGTELIB::Matrix R = D.rank();
-    for (i=0 ; i<_p ; i++) _W[i] = R.get(i);
+    for (i=0 ; i<_p ; i++) W_W[i] = R.get(i);
     if (preset=="REN"){
-      for (i=0 ; i<_p ; i++) _W[i] /= (double(_p)-1.0);
+      for (i=0 ; i<_p ; i++) W_W[i] /= (double(_p)-1.0);
     }
   }
   else if ( (preset=="RG") || (preset=="RGN") ){
     // ========================================================
     // Rank, computed with gamma method
     for (i=0 ; i<_p ; i++){
-      _W[i] = SGTELIB::gammacdf(pow(D.get(i),GAMMA_EXP),gamma_shape,gamma_scale);
+      W_W[i] = SGTELIB::gammacdf(pow(D.get(i),GAMMA_EXP),gamma_shape,gamma_scale);
     }
     // DE-Normalization
     if (preset=="RG"){
-      for (i=0 ; i<_p ; i++) _W[i] *= (double(_p)-1.0);
+      for (i=0 ; i<_p ; i++) W_W[i] *= (double(_p)-1.0);
     }
   }
-
-
 
 
 
@@ -346,44 +362,54 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
   // For Gamma methods, Handle special case where the variance of the distances is null
   if (var==0){
     for (i=0 ; i<_p ; i++){
-      _W[i] = 1.0;
+      W_W[i] = 1.0;
     }
     wsum = _p;
   }
   // Normal case
   else{
     // parameters of the gamma distribution
-
     const double lambda = _param.get_kernel_coef();
     //SGTELIB::rout << "lambda : " << lambda << "\n";
     const SGTELIB::kernel_t kt = _param.get_kernel_type();
     // Weights
     wsum = 0;
     for (i=0 ; i<_p ; i++){
-      _W[i] = kernel(kt,lambda,_W[i]);
-      wsum += _W[i];
+      W_W[i] = kernel(kt,lambda,W_W[i]);
+      wsum += W_W[i];
     }
   }
  
   // If a point must be excluded from the training points, set its weight to 0.
   if (i_exclude != -1){
-    wsum -= _W[i_exclude];
-    _W[i_exclude] = 0.0;
+    wsum -= W_W[i_exclude];
+    W_W[i_exclude] = 0.0;
     #ifdef SGTELIB_DEBUG
       SGTELIB::rout << "Exclude training point " << i_exclude << "\n";
     #endif
   }
 
+  #ifdef SGTELIB_DEBUG
+    SGTELIB::rout << "XXs = " << XXs[0] << "\n";
+    SGTELIB::rout << "i_exclude = " << i_exclude << "\n";
+    SGTELIB::rout << "wsum : " << wsum << "\n";
+    SGTELIB::rout << "W_W = ";
+    for (i=0 ; i<_p ; i++){
+      SGTELIB::rout << W_W[i] << " ";
+    }
+    SGTELIB::rout << "\n";
+  #endif
+
 
   if (wsum>EPSILON){
     for (i=0 ; i<_p ; i++){
-      _W[i] /= wsum;
+      W_W[i] /= wsum;
     }
   }
   else{
     // If all the weights are negligible, put 1 everywhere
     for (i=0 ; i<_p ; i++){
-      _W[i] = 1;
+      W_W[i] = 1;
     }
   }
 
@@ -391,39 +417,32 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
   double ridge = _param.get_ridge();
 
   // Build matrices
-  const int nvar = _trainingset.get_nvar(); 
   const SGTELIB::Matrix & Zs = get_matrix_Zs();
   const SGTELIB::Matrix & Xs = get_matrix_Xs();
-  // Reset H
-  for (i=0 ; i<_p ; i++){
-    for (j=0 ; j<_q ; j++){
-      _H[i][j] = 0;
-    }
-  }
+
+  double dx1 = 0;
 
   // Build H
   for (i=0 ; i<_p ; i++){
     k = 0;
-    _H[i][k++] = 1;
-    if (_W[i]>EPSILON){
+    H_H[i][k++] = 1;
+    if (W_W[i]>EPSILON){
       if (_degree>=10){
         // Linear terms
-        for (j=0 ; j<nvar ; j++){
-          _H[i][k++] = Xs.get(i,j)-XXs.get(0,j);
+        for (j=0 ; j<_n ; j++){
+          H_H[i][k++] = Xs.get(i,j)-XXs.get(0,j);
         }
       }
       if (_degree>=15){
          // Quad and crossed terms
-        for (j1=0 ; j1<nvar ; j1++){
-          if (_trainingset.get_X_nbdiff(j1)>1){
-            j2=j1;
-            if (_trainingset.get_X_nbdiff(j2)>1){
-              _H[i][k++] = (Xs.get(i,j1)-XXs.get(0,j1))*(Xs.get(i,j2)-XXs.get(0,j2));
-            }
+        for (j1=0 ; j1<_n ; j1++){
+          if (_x_multiple[j1]){
+            dx1 = (Xs.get(i,j1)-XXs.get(0,j1));
+            H_H[i][k++] = dx1*dx1;
             if (_degree>=20){
-              for (j2=j1+1 ; j2<nvar ; j2++){
-                if (_trainingset.get_X_nbdiff(j2)>1){
-                  _H[i][k++] = (Xs.get(i,j1)-XXs.get(0,j1))*(Xs.get(i,j2)-XXs.get(0,j2));
+              for (j2=j1+1 ; j2<_n ; j2++){
+                if (_x_multiple[j2]){
+                  H_H[i][k++] = dx1*(Xs.get(i,j2)-XXs.get(0,j2));
                 }
               }
             }
@@ -431,17 +450,21 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
         } 
       }    
     }
+    else{
+      // Put row to 0 (except first column at 1)
+      for (j=1 ; j<_q ; j++){
+        H_H[i][j] = 0;
+      }
+    }
   }
-
-
 
   // Reset A and HWZ
   for (i=0 ; i<_q ; i++){
     for (j=i ; j<_q ; j++){
-      _A[i][j] = 0;
+      A_A[i][j] = 0;
     }
     for (j=0 ; j<_m ; j++){
-      _HWZ[i][j] = 0;
+      HWZ_HWZ[i][j] = 0;
     }
   }
   #ifdef SGTELIB_DEBUG
@@ -451,37 +474,50 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
   // Build A and HWZ
   double w;
   for (k=0 ; k<_p ; k++){
-    w = _W[k];
+    w = W_W[k];
     if (w>EPSILON){
       #ifdef SGTELIB_DEBUG
         w_count++;
       #endif
       for (i=0 ; i<_q ; i++){
-        d = _H[k][i]*w;
+        d = H_H[k][i]*w;
         for (j=i ; j<_q ; j++){
-          _A[i][j] += d*_H[k][j];
+          A_A[i][j] += d*H_H[k][j];
         }
         for (j=0 ; j<_m ; j++){
-          _HWZ[i][j] += d*Zs.get(k,j);
+          HWZ_HWZ[i][j] += d*Zs.get(k,j);
         }
       }
     }
   }
   #ifdef SGTELIB_DEBUG
-    SGTELIB::rout << "non null w : " << w_count << " / " << _p << "\n";
+    SGTELIB::rout << "nb of non-zeros in w: " << w_count << " / " << _p << "\n";
   #endif
-  // Symmetry of A
+
+  // Symmetry of A 
   for (i=0 ; i<_q ; i++){
     for (j=i+1 ; j<_q ; j++){
-      _A[j][i] = _A[i][j];
+      A_A[j][i] = A_A[i][j];
     }
   }
 
-  // Add ridge term
-  //for (i=_trainingset.get_X_nbdiff1()+1 ; i<_q ; i++){
+  // Add ridge term (only for i>1)
   for (i=1 ; i<_q ; i++){
-    _A[i][i] += ridge;
+    A_A[i][i] += ridge;
   }
+
+  #ifdef SGTELIB_DEBUG
+    SGTELIB::rout << "A = \n";
+    for (i=0 ; i<_q ; i++){
+      for (j=0 ; j<_q ; j++){
+        SGTELIB::rout << A_A[j][i] << " ";
+      }
+      SGTELIB::rout << "\n";
+    }
+    SGTELIB::rout << "u:     ";
+     for (i=0 ; i<_q ; i++) SGTELIB::rout << _u[i] << " ";
+    SGTELIB::rout << "\n";
+  #endif
 
   #ifdef SGTELIB_LOWESS_DEV
     double time_build;
@@ -492,9 +528,29 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
   //       RESOLUTION        //
   //=========================//
 
-
   const double tol = 1e-12;
   int iter_conj = 0;
+
+  #ifdef SGTELIB_LOWESS_DEV
+    // Check if e1 is a solution
+    {
+      bool e1_sol = true;
+      if (A_A[0][0]!=1) e1_sol = false;
+      else{
+        for (i=1 ; i<_q ; i++){
+          if (A_A[0][i]!=0){
+            e1_sol = false;
+            break;
+          }
+        }
+      }
+      if (e1_sol){
+        SGTELIB::rout << "e1 is a solution!\n";
+        //_u[0] = 1;
+        //for (i=1 ; i<_q ; i++) _u[i] = 0;
+      }
+    }
+  #endif
 
   // Initial residual error ||Au-b||_2^2
   double res = 0;
@@ -502,7 +558,7 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
     double Au_i = -1;
     for (i=0 ; i<_q ; i++){
       for (j=0 ; j<_q ; j++){
-        Au_i += _A[i][j]*_old_u[j];
+        Au_i += A_A[i][j]*_u[j];
       }
       res += Au_i*Au_i;
       Au_i = 0;
@@ -515,16 +571,19 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
   bool USE_CONJ = false;
   if (res<1e-4) USE_CONJ = true;
   else          USE_CHOL = true;
-  
 
   #ifdef SGTELIB_DEBUG
     SGTELIB::rout << "USE CHOL / CONJ : " << USE_CHOL << " " << USE_CONJ << " ( " << res << " )\n";
   #endif
   #ifdef SGTELIB_LOWESS_DEV
+    // Test both methods
     USE_CHOL = true;
     USE_CONJ = true;
+    // Time
     double time_chol;
     double time_conj;
+    // Save old u
+    for (i=0 ; i<_q ; i++) _old_u[i] = _u[i];
   #endif
 
 
@@ -544,22 +603,21 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
     // to take into account the first term of b (which is 1);
     for (i=0 ; i<_q ; i++){
       for (j=0 ; j<_q ; j++){
-        d -= _A[i][j]*_u[j];
+        d -= A_A[i][j]*_u[j];
       }
       r[i] = d;
       p[i] = d;
       rr += d*d;
       d = 0;
     }
-
     double rr_old,alpha,pAp;
     
-    while (iter_conj < 100){
+    while ( (rr>tol) && (iter_conj < 100)) {
       // Ap // ===================
       for (i=0 ; i<_q ; i++){
         d = 0;
         for (j=0 ; j<_q ; j++){
-          d += _A[i][j]*p[j];
+          d += A_A[i][j]*p[j];
         }
         Ap[i] = d;
       }
@@ -575,9 +633,8 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
       rr_old = rr;
       rr = 0;
       for (i=0 ; i<_q ; i++) rr += r[i]*r[i];
-
       // Break ?? // =================
-      if (rr < tol) break;
+      if (rr <= tol) break;
       // p //=========================
       d = rr/rr_old;
       for (i=0 ; i<_q ; i++){
@@ -592,7 +649,7 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
       SGTELIB::rout << "Conj iter = " << iter_conj << "\n";
     #endif
     #ifdef SGTELIB_LOWESS_DEV
-        time_conj = double(clock() - clock_start)/double(CLOCKS_PER_SEC);
+      time_conj = double(clock() - clock_start)/double(CLOCKS_PER_SEC);
     #endif
     delete [] r;
     delete [] p;
@@ -605,7 +662,7 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
     #ifdef SGTELIB_LOWESS_DEV
       clock_start = clock();
     #endif
-    SGTELIB::Matrix A("A",_q,_q,_A);
+    SGTELIB::Matrix A("A",_q,_q,A_A);
     SGTELIB::Matrix b = SGTELIB::Matrix("b",_q,1);
     b.set(0,0,1.0);
     SGTELIB::Matrix u_mat = SGTELIB::Matrix::cholesky_solve(A,b);
@@ -618,26 +675,39 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
     }
   }
 
-
-  // Compute the output
-  for (j=0 ; j<_m ; j++){
-    d = 0;
-    for (k=0 ; k<_q ; k++){
-      d += _u[k]*_HWZ[k][j];
+  // Check that u has no nan
+  bool has_nan = false;
+  for (k=0 ; k<_q ; k++){
+    if (!isdef(_u[k])){
+      has_nan = true;
+      break;
     }
-    _ZZsi.set(0,j,d);
   }
-  // _ZZsi is the output of this method, but is not returned as it's an attribut of the class.
 
-  /*
-    SGTELIB::rout << "A = [\n";
+  // ZZsi_ZZsi is the output of this method, but is not returned as it's an attribut of the class.
+  if (has_nan){
+    // Find the closest point
+    int imin = D.get_min_index();
+    ZZsi_ZZsi = Zs.get_row(imin);
+  }
+  else{
+    // Use u to compute the output
+    for (j=0 ; j<_m ; j++){
+      d = 0;
+      for (k=0 ; k<_q ; k++) d += _u[k]*HWZ_HWZ[k][j];
+      ZZsi_ZZsi.set(0,j,d);
+    }
+  }
+
+
+  #ifdef SGTLEIB_DEBUG
+    SGTELIB::rout << "_u = [ ";
     for (i=0 ; i<_q ; i++){
-      for (j=0 ; j<_q ; j++)
-      SGTELIB::rout << _A[i][j] << " ";
-      SGTELIB::rout << "\n"; 
+      SGTELIB::rout << _u[i] << " ";
     }
     SGTELIB::rout << "]\n";
-  */
+    ZZsi_ZZsi.display(SGTELIB::rout);
+  #endif
 
   #ifdef SGTELIB_LOWESS_DEV
     // STATISTICS //
@@ -661,7 +731,10 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
       std::ofstream myfile;
       const std::string file_name = "LOWESS_times_n"+itos(_n)+".txt";
       myfile.open (file_name.c_str(),std::ios::app);
-      myfile << _n << " , " << dx << " " << du << " " << res << " , " << time_build << " " << time_chol << " " << time_conj << " , " << iter_conj << "\n";
+      myfile << _n << " , " << dx << " " 
+             << du << " " << res << " , "
+             << time_build << " " << time_chol 
+             << " " << time_conj << " , " << iter_conj << "\n";
       myfile.close();
     }
 
@@ -671,11 +744,6 @@ void SGTELIB::Surrogate_LOWESS::predict_private_single ( const SGTELIB::Matrix X
     }
   #endif
 
-
-    // Save old u
-    for (i=0 ; i<_q ; i++){
-      _old_u[i] = _u[i];
-    }
 
 }
 
@@ -689,11 +757,11 @@ const SGTELIB::Matrix * SGTELIB::Surrogate_LOWESS::get_matrix_Zvs (void){
     SGTELIB::rout << "Compute Zvs\n";
     SGTELIB::rout << "==========================\n";
   #endif
-  if ( !  _Zvs){
-    _Zvs = new SGTELIB::Matrix("Zvs",_p,_m);
+  if ( ! Z_Zvs){
+    Z_Zvs = new SGTELIB::Matrix("Zvs",_p,_m);
     for (int i=0 ; i<_p ; i++){
       predict_private_single( get_matrix_Xs().get_row(i) , i);
-      _Zvs->set_row( _ZZsi ,i);
+      Z_Zvs->set_row( ZZsi_ZZsi ,i);
     }
   }
   #ifdef SGTELIB_DEBUG
@@ -701,7 +769,7 @@ const SGTELIB::Matrix * SGTELIB::Surrogate_LOWESS::get_matrix_Zvs (void){
     SGTELIB::rout << "END Compute Zvs\n";
     SGTELIB::rout << "==========================\n";
   #endif
-  return _Zvs;
+  return Z_Zvs;
 }//
 
 

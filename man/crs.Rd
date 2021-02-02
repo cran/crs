@@ -148,7 +148,7 @@ in \code{x} are included or omitted from the resulting estimate }
 
   \item{complexity}{a character string (default
   \code{complexity="degree-knots"}) indicating whether model
-  `complexity' is determined by the degree of the spline or by the
+  \sQuote{complexity} is determined by the degree of the spline or by the
   number of segments (i.e. number of knots minus one). This option
   allows the user to use cross-validation to select either the spline
   degree (number of knots held fixed) or the number of knots (spline
@@ -157,7 +157,7 @@ in \code{x} are included or omitted from the resulting estimate }
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
-  Scientific Library (\url{http://www.gnu.org/software/gsl/}) and the
+  Scientific Library (\url{https://www.gnu.org/software/gsl/}) and the
   \code{\link{tensor.prod.model.matrix}} function }
 
    \item{knots}{ a character string (default \code{knots="quantiles"})
@@ -260,9 +260,9 @@ in \code{x} are included or omitted from the resulting estimate }
 
   \item{weights}{
     an optional vector of weights to be used in the fitting process.
-    Should be `NULL' or a numeric vector.  If non-NULL, weighted least
-    squares is used with weights `weights' (that is, minimizing
-    `sum(w*e^2)'); otherwise ordinary least squares is used.
+    Should be \sQuote{NULL} or a numeric vector.  If non-NULL, weighted least
+    squares is used with weights \sQuote{weights} (that is, minimizing
+    \sQuote{sum(w*e^2)}); otherwise ordinary least squares is used.
   }
 
   \item{singular.ok}{
@@ -308,7 +308,7 @@ in \code{x} are included or omitted from the resulting estimate }
 
   The regression spline model employs the tensor product B-spline basis
   matrix for a multivariate polynomial spline via the B-spline routines
-  in the GNU Scientific Library (\url{http://www.gnu.org/software/gsl/})
+  in the GNU Scientific Library (\url{https://www.gnu.org/software/gsl/})
   and the \code{\link{tensor.prod.model.matrix}} function.
 
   When \code{basis="additive"} the model becomes additive in nature
@@ -461,7 +461,7 @@ in \code{x} are included or omitted from the resulting estimate }
 
   Abramson, M.A. and C. Audet and G. Couture and J.E. Dennis Jr. and and
   S. Le Digabel (2011), \dQuote{The NOMAD project}. Software available
-  at http://www.gerad.ca/nomad.
+  at https://www.gerad.ca/nomad.
 
   Craven, P. and G. Wahba (1979), \dQuote{Smoothing Noisy Data With
     Spline Functions,} Numerische Mathematik, 13, 377-403.
@@ -558,7 +558,7 @@ plot(model,mean=TRUE,ci=TRUE)
 pdat <- plot(model,mean=TRUE,ci=TRUE,plot.behavior="data")
 
 ## Column 1 is the (evaluation) predictor ([,1]), 2-4 ([,-1]) the mean,
-## lwr, and upr (note the returned value is a `list' hence pdat[[1]] is
+## lwr, and upr (note the returned value is a 'list' hence pdat[[1]] is
 ## data for the first predictor, pdat[[2]] the second etc). Note that
 ## matplot() can plot this nicely.
 matplot(pdat[[1]][,1],pdat[[1]][,-1],

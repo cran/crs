@@ -28,7 +28,7 @@ are the bounds on the variables \eqn{x}. The functions \eqn{f(x)} and
 \eqn{g(x)} can be nonlinear and nonconvex. The variables can be integer,
 continuous real number, binary, and categorical.
 
-Kindly see \url{http://www.gerad.ca/nomad/Project/Home.html} and the
+Kindly see \url{https://www.gerad.ca/nomad/Project/Home.html} and the
 references below for details.
 
 }
@@ -154,7 +154,7 @@ snomadr(eval.f,
     number of knots, and optionally the kernel bandwidths when using
     \code{\link{crs}} with the option \code{cv="nomad"} (default). This
     is a constrained mixed integer combinatoric problem and is known to
-    be computationally `hard'. See \code{\link{frscvNOMAD}} and
+    be computationally \sQuote{hard}. See \code{\link{frscvNOMAD}} and
     \code{\link{krscvNOMAD}} for the functions called when
     \code{cv="nomad"} while using \code{\link{crs}}.
 
@@ -183,7 +183,7 @@ snomadr(eval.f,
 
   Abramson, M.A. and C. Audet and G. Couture and J.E. Dennis Jr. and
   S. Le Digabel (2011), \dQuote{The NOMAD project}. Software available
-  at http://www.gerad.ca/nomad.
+  at https://www.gerad.ca/nomad.
 
   Le Digabel, S. (2011), \dQuote{Algorithm 909: NOMAD: Nonlinear
   Optimization With The MADS Algorithm}. ACM Transactions on

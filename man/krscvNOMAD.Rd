@@ -70,12 +70,12 @@ krscvNOMAD(xz,
     conducting cross-validation (default \code{cv.df.min=1})}
 
   \item{complexity}{a character string (default
-  \code{complexity="degree-knots"}) indicating whether model `complexity' is
-  determined by the degree of the spline or by the number of segments
-  (`knots'). This option allows the user to use cross-validation to
-  select either the spline degree (number of knots held fixed) or the
-  number of knots (spline degree held fixed) or both the spline degree
-  and number of knots}
+  \code{complexity="degree-knots"}) indicating whether model
+  \sQuote{complexity} is determined by the degree of the spline or by
+  the number of segments (\sQuote{knots}). This option allows the user
+  to use cross-validation to select either the spline degree (number
+  of knots held fixed) or the number of knots (spline degree held
+  fixed) or both the spline degree and number of knots}
 
    \item{knots}{ a character string (default \code{knots="quantiles"})
   specifying where knots are to be placed. \sQuote{quantiles} specifies
@@ -179,9 +179,9 @@ krscvNOMAD(xz,
   
   \item{weights}{
     an optional vector of weights to be used in the fitting process.
-    Should be `NULL' or a numeric vector.  If non-NULL, weighted least
-    squares is used with weights `weights' (that is, minimizing
-    `sum(w*e^2)'); otherwise ordinary least squares is used.
+    Should be \sQuote{NULL} or a numeric vector.  If non-NULL, weighted least
+    squares is used with weights \sQuote{weights} (that is, minimizing
+    \sQuote{sum(w*e^2)}); otherwise ordinary least squares is used.
   }
   
   \item{singular.ok}{
@@ -211,7 +211,7 @@ krscvNOMAD(xz,
   For the continuous predictors the regression spline model employs
   either the additive or tensor product B-spline basis matrix for a
   multivariate polynomial spline via the B-spline routines in the GNU
-  Scientific Library (\url{http://www.gnu.org/software/gsl/}) and the
+  Scientific Library (\url{https://www.gnu.org/software/gsl/}) and the
   \code{\link{tensor.prod.model.matrix}} function.
 
   For the discrete predictors the product kernel function is of the
@@ -251,7 +251,7 @@ krscvNOMAD(xz,
 
   Abramson, M.A. and C. Audet and G. Couture and J.E. Dennis Jr. and
   S. Le Digabel (2011), \dQuote{The NOMAD project}. Software available
-  at http://www.gerad.ca/nomad.
+  at https://www.gerad.ca/nomad.
 
   Craven, P. and G. Wahba (1979), \dQuote{Smoothing Noisy Data With
   Spline Functions,} Numerische Mathematik, 13, 377-403.

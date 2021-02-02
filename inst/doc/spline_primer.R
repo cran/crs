@@ -1,5 +1,4 @@
 ### R code from vignette source 'spline_primer.Rnw'
-### Encoding: UTF-8
 
 ###################################################
 ### code chunk number 1: spline_primer.Rnw:54-56

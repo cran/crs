@@ -68,7 +68,7 @@ SEXP mgcv_tmm(SEXP x,SEXP t,SEXP D,SEXP M, SEXP N) {
   m = INTEGER(M);
   n = INTEGER(N);
   mgcv_tensor_mm(X,T,d,m,n);
-  return R_NilValue;
+  return(R_NilValue);
 }
 
 /* 
@@ -143,6 +143,6 @@ SEXP glp_model_tmm(SEXP X,SEXP Z, SEXP T, SEXP D,SEXP M, SEXP N, SEXP ZN)
 		zn = INTEGER(ZN);
 
 		glp_model_mm(x, z, t, d, m, n, zn);
+                return(R_NilValue);
 
-		return R_NilValue;
 }

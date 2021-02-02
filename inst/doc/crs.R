@@ -1,5 +1,4 @@
 ### R code from vignette source 'crs.Rnw'
-### Encoding: UTF-8
 
 ###################################################
 ### code chunk number 1: crs.Rnw:64-66
