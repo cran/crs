@@ -29,7 +29,7 @@ for(i in 1:degree) lines(x,Bernstein(degree,i,x),lty=i+1,lwd=2,col=i+1)
 
 
 ###################################################
-### code chunk number 4: spline_primer.Rnw:374-383
+### code chunk number 4: spline_primer.Rnw:379-388
 ###################################################
 degree <- 3
 m <- degree+1
@@ -43,7 +43,7 @@ matplot(x,B,type="l",lwd=2)
 
 
 ###################################################
-### code chunk number 5: spline_primer.Rnw:385-388
+### code chunk number 5: spline_primer.Rnw:390-393
 ###################################################
 deriv <- 1
 B.deriv <- gsl.bs(x,degree=degree,nbreak=nbreak,deriv=deriv,intercept=TRUE)
