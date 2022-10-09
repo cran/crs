@@ -1,5 +1,5 @@
-f346534f87a969308935249bd4bb2b90 *CHANGELOG
-a38a8ff568de545e0179cbb03145a300 *DESCRIPTION
+9f59defa33397233a85a9d4f11277eb5 *CHANGELOG
+e0a712ea6f80f8c4e14794328e3a53c8 *DESCRIPTION
 247ae6f069584fd009148d13c8bfaffe *NAMESPACE
 a0e144aec4140084a9814da0474622cb *R/clsd.R
 627abbfdb9778d94525742417563a3fc *R/console.R
@@ -24,9 +24,9 @@ eab37121264c8443e4438e01177145d0 *R/snomadr.R
 5b76d65c50df2157e6dc1e1e87af3217 *R/spline.R
 ddd9e2a284a91a95faca81965f5b4050 *R/stepCV.R
 32c20b7c7edf628d30c38f42fca7fffe *R/util.R
-1de716ae57bd22d6a36c1d3498f11db0 *R/zzz.R
+18063a4511923799490de06a6d44cfe5 *R/zzz.R
 77c5909167c8d9d5dc022274c0bbe93c *README.md
-02cab6a8066158c036e255d5e6689764 *build/vignette.rds
+0939064b1ce32fddba12a9d139ccad53 *build/vignette.rds
 f597d077e6f51df6592d99d7fb35dd31 *cleanup
 6389d84d62cccc437d6f253a491f2b37 *data/Engel95.rda
 bbd3bdaf69214036473c871f1274b03c *data/cps71.rda
@@ -51,12 +51,12 @@ fc4aac2de02a42ebaf393121758b1142 *demo/radial_persp.R
 5449fd27646fceaff1f05234cc567658 *inst/COPYRIGHTS
 978e0dee222c39ae37ffbb7a5a46dbd0 *inst/doc/crs.R
 8b661cef4f95206dae48ceb3c4d41b9f *inst/doc/crs.Rnw
-5c6c373a845cb333e33d3e2bbba942fd *inst/doc/crs.pdf
-5764438f11d1ef4a7055c2992d509d75 *inst/doc/crs_faq.Rnw
-2b599787b3d6af242ac0ff3144995a93 *inst/doc/crs_faq.pdf
+4b49e0ab3334e5a0973d2af1c1aafc5a *inst/doc/crs.pdf
+eab31ecd81660a31f9d13c0547ff8c6c *inst/doc/crs_faq.Rnw
+8029863e835628d2e15e0520bb3e733e *inst/doc/crs_faq.pdf
 3f37543f7ffe8f68c00335bec48f1cc2 *inst/doc/spline_primer.R
 412f15837a9526bdb9561a2ba68f8db9 *inst/doc/spline_primer.Rnw
-2cf87259e3bd27ac30b3173fcac70026 *inst/doc/spline_primer.pdf
+2281850c48c421b3b2bd3ee977fab493 *inst/doc/spline_primer.pdf
 bbeddc8a38a1268d882465d27aea65cf *man/clsd.Rd
 db6fbcf03f8054944329035ad11efd93 *man/crs-package.Rd
 cda2616918a01584bd403b1f27261b4d *man/crs.Rd
@@ -81,8 +81,8 @@ e0db9d0a6f154f764a74f95449974f93 *src/RuniqueCombs.c
 a819726281e84957b6b82f56c62fe295 *src/RuniqueCombs.h
 d8d77197d6b6a27e65afca251d94e159 *src/bspline.c
 dfcf901e34b5e31247b58618eeef0f3c *src/crs_init.c
-ad9a750d2266e54703ea73d2579d941d *src/gsl_bspline.c
-03a6fb12accf79c12fb760c4252fd99e *src/gsl_bspline.h
+3bd362e567b662b9c1503848c567dd54 *src/gsl_bspline.c
+310bfe6185bac464cd8d670bb4093b49 *src/gsl_bspline.h
 c985c567da4cb8c7aab6d6d6a8ed4df9 *src/mgcv.c
 1fc377c2409da691a95a42d6599c8a09 *src/mgcv.h
 9724192a500667bac1052cffb36ed768 *src/nomad_src/Algo_Parameters.cpp
@@ -249,7 +249,7 @@ e5259ab163d0231a40fefcbb6a8a2fad *src/sgtelib_src/header.txt
 0395f04ce8da2c677f854fa21a70b5ed *src/snomadr.h
 8b661cef4f95206dae48ceb3c4d41b9f *vignettes/crs.Rnw
 de8ef756b3d8d977afbd7a511983d808 *vignettes/crs.bib
-5764438f11d1ef4a7055c2992d509d75 *vignettes/crs_faq.Rnw
+eab31ecd81660a31f9d13c0547ff8c6c *vignettes/crs_faq.Rnw
 61afd8ff69ca07b4922e0eaba771e6e8 *vignettes/crs_faq.bib
 412f15837a9526bdb9561a2ba68f8db9 *vignettes/spline_primer.Rnw
 d4cdd20c115531b5b74560031bf467a7 *vignettes/spline_primer.bib
