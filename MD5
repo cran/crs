@@ -1,5 +1,5 @@
-9f59defa33397233a85a9d4f11277eb5 *CHANGELOG
-e0a712ea6f80f8c4e14794328e3a53c8 *DESCRIPTION
+b567dd28f20e640eb9650f03a320ab89 *CHANGELOG
+b013a7e556aead5fc1624aa475dde5e9 *DESCRIPTION
 247ae6f069584fd009148d13c8bfaffe *NAMESPACE
 a0e144aec4140084a9814da0474622cb *R/clsd.R
 627abbfdb9778d94525742417563a3fc *R/console.R
@@ -24,7 +24,7 @@ eab37121264c8443e4438e01177145d0 *R/snomadr.R
 5b76d65c50df2157e6dc1e1e87af3217 *R/spline.R
 ddd9e2a284a91a95faca81965f5b4050 *R/stepCV.R
 32c20b7c7edf628d30c38f42fca7fffe *R/util.R
-18063a4511923799490de06a6d44cfe5 *R/zzz.R
+940cb2d0207abcb475b6151cd6de8499 *R/zzz.R
 77c5909167c8d9d5dc022274c0bbe93c *README.md
 0939064b1ce32fddba12a9d139ccad53 *build/vignette.rds
 f597d077e6f51df6592d99d7fb35dd31 *cleanup
@@ -51,12 +51,12 @@ fc4aac2de02a42ebaf393121758b1142 *demo/radial_persp.R
 5449fd27646fceaff1f05234cc567658 *inst/COPYRIGHTS
 978e0dee222c39ae37ffbb7a5a46dbd0 *inst/doc/crs.R
 8b661cef4f95206dae48ceb3c4d41b9f *inst/doc/crs.Rnw
-4b49e0ab3334e5a0973d2af1c1aafc5a *inst/doc/crs.pdf
-eab31ecd81660a31f9d13c0547ff8c6c *inst/doc/crs_faq.Rnw
-8029863e835628d2e15e0520bb3e733e *inst/doc/crs_faq.pdf
+341530bdd19891ccac454fb99a46fff4 *inst/doc/crs.pdf
+cbeaffb9fb3efdd75d3f60d9262c3635 *inst/doc/crs_faq.Rnw
+9f2970e02d4eaaff2fdc18fb5ec00859 *inst/doc/crs_faq.pdf
 3f37543f7ffe8f68c00335bec48f1cc2 *inst/doc/spline_primer.R
 412f15837a9526bdb9561a2ba68f8db9 *inst/doc/spline_primer.Rnw
-2281850c48c421b3b2bd3ee977fab493 *inst/doc/spline_primer.pdf
+cd7288f4c47af1470359a876ed814746 *inst/doc/spline_primer.pdf
 bbeddc8a38a1268d882465d27aea65cf *man/clsd.Rd
 db6fbcf03f8054944329035ad11efd93 *man/crs-package.Rd
 cda2616918a01584bd403b1f27261b4d *man/crs.Rd
@@ -77,7 +77,7 @@ cec96c631c7e2f44f107cd2b366b5b39 *man/npglpreg.Rd
 529f61665904d3d8c234d12dbc94dca1 *man/tensor.prod.model.matrix.Rd
 c597e27a21ca57deed779b957cb23a3f *man/uniquecombs.Rd
 7cc1a1a20379c9fd46d17e4acf96c511 *src/Makevars
-e0db9d0a6f154f764a74f95449974f93 *src/RuniqueCombs.c
+a06b6b9fc8d5adbfd6fc6119c4cfe695 *src/RuniqueCombs.c
 a819726281e84957b6b82f56c62fe295 *src/RuniqueCombs.h
 d8d77197d6b6a27e65afca251d94e159 *src/bspline.c
 dfcf901e34b5e31247b58618eeef0f3c *src/crs_init.c
@@ -123,7 +123,7 @@ b22558995c4b0cf2517f11f7d475a416 *src/nomad_src/GMesh.hpp
 455f5e1b15910f11c5de9bb495e86955 *src/nomad_src/LH_Search.hpp
 3ccddf7684c7539760e1c6f53c9ba78a *src/nomad_src/L_Curve.cpp
 d1f6766edb786df5f27314ffc6d8070c *src/nomad_src/L_Curve.hpp
-8aab340c3f269ff232d8f49145e13e2b *src/nomad_src/Mads.cpp
+59a812e5e9ff576241a094a03199efa5 *src/nomad_src/Mads.cpp
 42b60b077fc8a1e20eea1c6789f4e715 *src/nomad_src/Mads.hpp
 d506a8c7ce1570fd4d0b097224c9c252 *src/nomad_src/Model_Sorted_Point.cpp
 4a52f635e32585bf04bf41b43455fd9d *src/nomad_src/Model_Sorted_Point.hpp
@@ -132,7 +132,7 @@ a31785c10c9aa75f3993d46a43576124 *src/nomad_src/Model_Stats.cpp
 05dd030403f230502a65dac453f38012 *src/nomad_src/Multi_Obj_Evaluator.cpp
 a0949f97690ddf65e5c3cd5a4d56b480 *src/nomad_src/Multi_Obj_Evaluator.hpp
 c51267506a60efe1d02a6d6b431b0574 *src/nomad_src/Multi_Obj_Quad_Model_Evaluator.hpp
-d5a4da1164f6a66dbf901e1b269f58dd *src/nomad_src/NelderMead_Search.cpp
+bd7a81b5d3db8954c07dd45a659309b1 *src/nomad_src/NelderMead_Search.cpp
 47b167262d1c7b923d84074917e47719 *src/nomad_src/NelderMead_Search.hpp
 f538cb87fd0cd3b985c0a4ede7417d32 *src/nomad_src/NelderMead_Simplex_Eval_Point.cpp
 c1e1f70c11eec12c203c30cac654a5d2 *src/nomad_src/NelderMead_Simplex_Eval_Point.hpp
@@ -175,7 +175,7 @@ d94490622230a6a2b15797c7e6581588 *src/nomad_src/Sgtelib_Model_Evaluator.cpp
 411940fd1ca5fbba1043446800910c69 *src/nomad_src/Sgtelib_Model_Manager.cpp
 3a582d5f8fab3eafba40533e542328f4 *src/nomad_src/Sgtelib_Model_Manager.hpp
 66f129e5cc1405ffa5f24e8316a3c2d9 *src/nomad_src/Sgtelib_Model_Search.cpp
-a873a3cba6cb180f0e12ccccf428b1c3 *src/nomad_src/Sgtelib_Model_Search.hpp
+ddd22c13a6f80dd1f48dd99bf42eccad *src/nomad_src/Sgtelib_Model_Search.hpp
 42cd146988c53008f71e8ee24306762d *src/nomad_src/Signature.cpp
 df43692b073742ab2f083161a1fd7b35 *src/nomad_src/Signature.hpp
 6d078562d32113fcbfe31a7d9f49c97f *src/nomad_src/Signature_Element.hpp
@@ -249,7 +249,7 @@ e5259ab163d0231a40fefcbb6a8a2fad *src/sgtelib_src/header.txt
 0395f04ce8da2c677f854fa21a70b5ed *src/snomadr.h
 8b661cef4f95206dae48ceb3c4d41b9f *vignettes/crs.Rnw
 de8ef756b3d8d977afbd7a511983d808 *vignettes/crs.bib
-eab31ecd81660a31f9d13c0547ff8c6c *vignettes/crs_faq.Rnw
+cbeaffb9fb3efdd75d3f60d9262c3635 *vignettes/crs_faq.Rnw
 61afd8ff69ca07b4922e0eaba771e6e8 *vignettes/crs_faq.bib
 412f15837a9526bdb9561a2ba68f8db9 *vignettes/spline_primer.Rnw
 d4cdd20c115531b5b74560031bf467a7 *vignettes/spline_primer.bib
