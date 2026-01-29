@@ -523,12 +523,12 @@ model <- npglpreg(y~x1+x2,nmulti=1)
 summary(model)
 
 ## Plot the partial means and percentile confidence intervals
-plot(model,ci=T)
+plot(model,ci=TRUE)
 ## Extract the data from the plot object and plot it separately
-myplot.dat <- plot(model,plot.behavior="data",ci=T)
-matplot(myplot.dat[[1]][,1],myplot.dat[[1]][,-1],type="l")
-matplot(myplot.dat[[2]][,1],myplot.dat[[2]][,-1],type="l")
-}
+# myplot.dat <- plot(model,plot.behavior="data",ci=TRUE)
+# matplot(myplot.dat[[1]][,1],myplot.dat[[1]][,-1],type="l")
+# matplot(myplot.dat[[2]][,1],myplot.dat[[2]][,-1],type="l")
+} % end dontrun
 }
 \keyword{ nonparametric }
 \keyword{ regression }
