@@ -10,25 +10,28 @@
 
 krscv <- function(xz,
                   y,
-                  degree.max=10,
-                  segments.max=10,
-                  degree.min=0,
-                  segments.min=1,
-                  restarts=0,
-                  complexity=c("degree-knots","degree","knots"),
-                  knots=c("quantiles","uniform", "auto"),
                   basis=c("additive","tensor","glp","auto"),
+                  complexity=c("degree-knots","degree","knots"),
                   cv.func=c("cv.ls","cv.gcv","cv.aic"),
                   degree=degree,
+                  degree.max=10,
+                  degree.min=0,
+                  display.nomad.progress=TRUE,
+                  display.warnings=TRUE,
+                  knots=c("quantiles","uniform", "auto"),
+                  restarts=0,
                   segments=segments,
+                  segments.max=10,
+                  segments.min=1,
+                  singular.ok=FALSE,
                   tau=NULL,
-                  weights=NULL,
-                  singular.ok=FALSE) {
+                  weights=NULL) {
 
   complexity <- match.arg(complexity)
   knots <- match.arg(knots)
   basis <- match.arg(basis)
   cv.func <- match.arg(cv.func)
+  cv.maxPenalty <- resolve_cv_maxPenalty(NULL, y, weights = weights, cv.func = cv.func)
 
   ## First define the cv function to be fed to optim
 
@@ -71,14 +74,14 @@ krscv <- function(xz,
     if(is.null(K)) {
       num.x <- NCOL(x)
       num.z <- NCOL(z)
-      K <- round(cbind(input[1:num.x],input[(num.x+1):(2*num.x)]))
-      lambda <- input[(2*num.x+1):(2*num.x+num.z)]
+      K <- round(cbind(input[seq_len(num.x)], input[.crs_index_block(num.x, num.x)]))
+      lambda <- input[.crs_index_block(2 * num.x, num.z)]
     } else {
-      K <- round(cbind(K[1:num.x],K[(num.x+1):(2*num.x)]))
+      K <- round(cbind(K[seq_len(num.x)], K[.crs_index_block(num.x, num.x)]))
       lambda <- input
     }
     ## When using weights= lambda of zero fails. Trivial to trap.
-    lambda <- ifelse(lambda <= 0, .Machine$double.eps, lambda)
+    lambda <- pmax(lambda, .Machine$double.eps)
 
     cv <- cv.kernel.spline.wrapper(x=x,
                                    y=y,
@@ -88,6 +91,7 @@ krscv <- function(xz,
                                    z.unique=z.unique,
                                    ind=ind,
                                    ind.vals=ind.vals,
+                                   ind.list=ind.list,
                                    nrow.z.unique=nrow.z.unique,
                                    is.ordered.z=is.ordered.z,
                                    knots=knots,
@@ -104,67 +108,66 @@ krscv <- function(xz,
     fw.format.2 <- function(input) sapply(input,sprintf,fmt="%#.2f")
 
     if(complexity=="degree") {
-        if(!is.null(j)) {
-            if(j==1) {
-                tmp.1 <- paste("\r",j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
-            } else {
-                dt <- (t2-t1)*(nrow.K.mat-j+1)/j
-                tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
-                               fw.format.2(as.numeric((t2-t1),units="mins")),
-                               "m",sep="")
-                tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
-            }
+      if(!is.null(j)) {
+        if(j==1) {
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
         } else {
-            tmp.1 <- paste("d[1]=", K[1,1],sep="")
+          dt <- (t2-t1)*(nrow.K.mat-j+1)/j
+          tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
+                         fw.format.2(as.numeric((t2-t1),units="mins")),
+                         "m",sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
         }
-        if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
+      } else {
+        tmp.1 <- paste("d[1]=", K[1,1],sep="")
+      }
+      if (num.x > 1) for (i in seq.int(2L, num.x)) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
     } else  if(complexity=="knots") {
-        if(!is.null(j)) {
-            if(j==1) {
-                tmp.1 <- paste("\r",j,"/",nrow.K.mat,", s[1]=",K[1,2],sep="")
-            } else {
-                dt <- (t2-t1)*(nrow.K.mat-j+1)/j
-                tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
-                               fw.format.2(as.numeric((t2-t1),units="mins")),
-                               "m",sep="")
-                tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", s[1]=",K[1,2],sep="")
-            }
+      if(!is.null(j)) {
+        if(j==1) {
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,", s[1]=",K[1,2],sep="")
         } else {
-            tmp.1 <- paste("s[1]=", K[1,2],sep="")
+          dt <- (t2-t1)*(nrow.K.mat-j+1)/j
+          tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
+                         fw.format.2(as.numeric((t2-t1),units="mins")),
+                         "m",sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", s[1]=",K[1,2],sep="")
         }
-        if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
+      } else {
+        tmp.1 <- paste("s[1]=", K[1,2],sep="")
+      }
+      if (num.x > 1) for (i in seq.int(2L, num.x)) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
     } else  if(complexity=="degree-knots") {
-        if(!is.null(j)) {
-            if(j==1) {
-                tmp.1 <- paste("\r",j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
-            } else {
-                dt <- (t2-t1)*(nrow.K.mat-j+1)/j
-                tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
-                               fw.format.2(as.numeric((t2-t1),units="mins")),
-                               "m",sep="")
-                tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
-            }
+      if(!is.null(j)) {
+        if(j==1) {
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,", d[1]=",K[1,1],sep="")
         } else {
-            tmp.1 <- paste("d[1]=", K[1,1],sep="")
+          dt <- (t2-t1)*(nrow.K.mat-j+1)/j
+          tmp.0 <- paste(", ",fw.format.2(as.numeric(dt,units="mins")),"/",
+                         fw.format.2(as.numeric((t2-t1),units="mins")),
+                         "m",sep="")
+          tmp.1 <- paste("\r",j,"/",nrow.K.mat,tmp.0,", d[1]=",K[1,1],sep="")
         }
-        if(num.x > 1) for(i in 2:num.x) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
-        for(i in 1:num.x) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
+      } else {
+        tmp.1 <- paste("d[1]=", K[1,1],sep="")
+      }
+      if (num.x > 1) for (i in seq.int(2L, num.x)) tmp.1 <- paste(tmp.1, ", d[", i, "]=", K[i,1],sep="")
+      for(i in seq_len(num.x)) tmp.1 <- paste(tmp.1, ", s[", i, "]=", K[i,2],sep="")
     }
 
     ## For i/o for z variables
 
     tmp.2 <- paste(", rs=", restart, "/", num.restarts,sep="")
     tmp.3 <- ""
-    for(i in 1:num.z) tmp.3 <- paste(tmp.3, ", l[", i, "]=", fw.format.3(lambda[i]),sep="")
+    for(i in seq_len(num.z)) tmp.3 <- paste(tmp.3, ", l[", i, "]=", fw.format.3(lambda[i]),sep="")
     tmp.4 <- paste(", cv=", format(cv,digits=6), sep="")
     if(num.restarts > 0) {
-        msg <- paste(tmp.1,tmp.2,tmp.3,tmp.4,sep="")
+      msg <- paste(tmp.1,tmp.2,tmp.3,tmp.4,sep="")
     } else {
-        msg <- paste(tmp.1,tmp.3,tmp.4,sep="")
+      msg <- paste(tmp.1,tmp.3,tmp.4,sep="")
     }
 
-    console <<- printClear(console)
-    console <<- printPush(msg,console = console)
+    .crs_progress_status_update(progress.status, msg)
 
     return(cv)
 
@@ -180,6 +183,8 @@ krscv <- function(xz,
   z.unique <- uniquecombs(z)
   ind <-  attr(z.unique,"index")
   ind.vals <-  unique(ind)
+  ind.list <- vector("list", length(ind.vals))
+  for(i in seq_along(ind.vals)) ind.list[[i]] <- ind == ind.vals[i]
   nrow.z.unique <- NROW(z.unique)
   num.x <- NCOL(x)
   n <- NROW(x)
@@ -205,19 +210,21 @@ krscv <- function(xz,
 
   if(degree.max < 1 || segments.max < 1 ) stop(" degree.max or segments.max must be greater than or equal to 1")
 
-  console <- newLineConsole()
-  console <- printPush("Working...",console = console)
+  progress.status <- .crs_progress_status_begin(
+    enabled = display.nomad.progress,
+    surface = "cv"
+  )
 
   ## Exhaustive evaluation over all combinations of K, search over
   ## lambda for each combination
   if(complexity == "degree-knots") {
-      K.mat <- matrix.combn(K.vec1=degree.min:degree.max, K.vec2=segments.min:segments.max,num.x=num.x)
+    K.mat <- matrix.combn(K.vec1=degree.min:degree.max, K.vec2=segments.min:segments.max,num.x=num.x)
   } else if(complexity == "degree") {
-      K.mat <- matrix.combn(K.vec1=degree.min:degree.max,num.x=num.x)
-      K.mat <- cbind(K.mat[,1:num.x],matrix(segments,nrow(K.mat),length(segments),byrow=TRUE))
+    K.mat <- matrix.combn(K.vec1=degree.min:degree.max,num.x=num.x)
+    K.mat <- cbind(K.mat[,seq_len(num.x)],matrix(segments,nrow(K.mat),length(segments),byrow=TRUE))
   } else if (complexity == "knots"){
-      K.mat <- matrix.combn(K.vec1=segments.min:segments.max,num.x=num.x)
-      K.mat <- cbind(matrix(degree,nrow(K.mat),length(degree),byrow=TRUE),K.mat[,1:num.x])
+    K.mat <- matrix.combn(K.vec1=segments.min:segments.max,num.x=num.x)
+    K.mat <- cbind(matrix(degree,nrow(K.mat),length(degree),byrow=TRUE),K.mat[,seq_len(num.x)])
   }
 
   ## Strip off all (except one) rows with degree 0 for all continuous
@@ -225,7 +232,7 @@ krscv <- function(xz,
   ## this will be computed only once for all predictors having degree
   ## 0, segments 1).
 
-  degree.zero.rows <- which(rowSums(K.mat[,1:num.x,drop=FALSE])==0)[-1]
+  degree.zero.rows <- which(rowSums(K.mat[,seq_len(num.x),drop=FALSE])==0)[-1]
 
   if(length(degree.zero.rows) > 0) K.mat <- K.mat[-degree.zero.rows,,drop=FALSE]
 
@@ -233,7 +240,7 @@ krscv <- function(xz,
 
   ## Initialize
 
-  cv.vec <- rep(.Machine$double.xmax,nrow.K.mat)
+  cv.vec <- rep(cv.maxPenalty, nrow.K.mat)
 
   basis.vec <- character(nrow.K.mat)
   lambda.mat <- matrix(NA,nrow.K.mat,num.z)
@@ -243,7 +250,7 @@ krscv <- function(xz,
 
   t2 <- Sys.time() ## placeholder
 
-  for(j in 1:nrow.K.mat) {
+  for(j in seq_len(nrow.K.mat)) {
 
     if(basis=="auto") {
 
@@ -289,7 +296,7 @@ krscv <- function(xz,
 
       if(restarts > 0) {
 
-        for(r in 1:restarts) {
+        for(r in seq_len(restarts)) {
 
           output.restart$convergence <- 42
 
@@ -383,7 +390,7 @@ krscv <- function(xz,
 
       if(restarts > 0) {
 
-        for(r in 1:restarts) {
+        for(r in seq_len(restarts)) {
 
           output.restart$convergence <- 42
 
@@ -477,7 +484,7 @@ krscv <- function(xz,
 
       if(restarts > 0) {
 
-        for(r in 1:restarts) {
+        for(r in seq_len(restarts)) {
 
           output.restart$convergence <- 42
 
@@ -574,7 +581,7 @@ krscv <- function(xz,
 
       if(restarts > 0) {
 
-        for(r in 1:restarts) {
+        for(r in seq_len(restarts)) {
 
           output.restart$convergence <- 42
 
@@ -641,12 +648,11 @@ krscv <- function(xz,
   K.opt <- K.mat[ocv.vec,,drop=FALSE][1,]
   lambda.opt <- lambda.mat[ocv.vec,,drop=FALSE][1,]
   basis.opt <- basis.vec[ocv.vec][1]
-  degree <- K.opt[1:num.x]
-  segments <- K.opt[(num.x+1):(2*num.x)]
-  if(!is.null(z)) I.opt <- K.opt[(2*num.x+1):(2*num.x+num.z)]
+  degree <- K.opt[seq_len(num.x)]
+  segments <- K.opt[.crs_index_block(num.x, num.x)]
+  if(!is.null(z)) I.opt <- K.opt[.crs_index_block(2 * num.x, num.z)]
 
-  console <- printClear(console)
-  console <- printPop(console)
+  .crs_progress_status_clear(progress.status)
 
   ## Set number of segments when degree==0 to 1 (or NA)
   segments[degree==0] <- 1
@@ -654,32 +660,35 @@ krscv <- function(xz,
   knots.opt <- knots
   ## One more time to call cv.kernel.spline to know knots when knots="auto"
   if(knots=="auto") {
-      ## When using weights= lambda of zero fails. Trivial to trap.
-      lambda.opt <- ifelse(lambda.opt <= 0, .Machine$double.eps, lambda.opt)
+    ## When using weights= lambda of zero fails. Trivial to trap.
+    lambda.opt <- pmax(lambda.opt, .Machine$double.eps)
 
-      cv.knots <- cv.kernel.spline.wrapper(x=x,
-                                           y=y,
-                                           z=z,
-                                           K=cbind(degree, segments),
-                                           lambda=lambda.opt,
-                                           z.unique=z.unique,
-                                           ind=ind,
-                                           ind.vals=ind.vals,
-                                           nrow.z.unique=nrow.z.unique,
-                                           is.ordered.z=is.ordered.z,
-                                           knots=knots,
-                                           basis=basis.opt,
-                                           cv.func=cv.func,
-                                           cv.df.min=1,
-                                           tau=tau,
-                                           weights=weights,
-                                           singular.ok=singular.ok)
+    cv.knots <- cv.kernel.spline.wrapper(x=x,
+                                         y=y,
+                                         z=z,
+                                         K=cbind(degree, segments),
+                                         lambda=lambda.opt,
+                                         z.unique=z.unique,
+                                         ind=ind,
+                                         ind.vals=ind.vals,
+                                         ind.list=ind.list,
+                                         nrow.z.unique=nrow.z.unique,
+                                         is.ordered.z=is.ordered.z,
+                                         knots=knots,
+                                         basis=basis.opt,
+                                         cv.func=cv.func,
+                                         cv.df.min=1,
+                                         tau=tau,
+                                         weights=weights,
+                                         singular.ok=singular.ok)
 
-      knots.opt <- attributes(cv.knots)$knots.opt
+    knots.opt <- attributes(cv.knots)$knots.opt
   }
 
-  if(any(degree==degree.max)) warning(paste(" optimal degree equals search maximum (", degree.max,"): rerun with larger degree.max",sep=""))
-  if(any(segments==segments.max)) warning(paste(" optimal segment equals search maximum (", segments.max,"): rerun with larger segments.max",sep=""))
+  if(display.warnings) {
+    if(any(degree==degree.max)) warning(paste(" optimal degree equals search maximum (", degree.max,"): rerun with larger degree.max",sep=""))
+    if(any(segments==segments.max)) warning(paste(" optimal segment equals search maximum (", segments.max,"): rerun with larger segments.max",sep=""))
+  }
 
   crscv(K=K.opt,
         I=NULL,

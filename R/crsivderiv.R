@@ -23,32 +23,104 @@
 ## norm.value: the norm not multiplied by the number of iterations
 ## convergence: a character string indicating whether/why iteration terminated
 
-crsivderiv <- function(y,
+crsivderiv <- function(y, ...) UseMethod("crsivderiv")
+
+crsivderiv.default <- function(y,
                        z,
                        w,
                        x=NULL,
                        zeval=NULL,
                        weval=NULL,
                        xeval=NULL,
-                       iterate.max=1000,
-                       iterate.diff.tol=1.0e-08,
                        constant=0.5,
+                       display.nomad.progress=TRUE,
+                       display.warnings=TRUE,
+                       iterate.diff.tol=1.0e-08,
+                       iterate.max=1000,
+                       opts=list("MAX_BB_EVAL"=10000,
+                                 "EPSILON"=.Machine$double.eps,
+                                 "INITIAL_MESH_SIZE"="r1.0e-01",
+                                 "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
+                                 "MIN_FRAME_SIZE"=paste("r",1,sep=""),
+                                 "DISPLAY_DEGREE"=0),
                        penalize.iteration=TRUE,
+                       smooth.residuals=TRUE,
                        start.from=c("Eyz","EEywz"),
                        starting.values=NULL,
                        stop.on.increase=TRUE,
-                       smooth.residuals=TRUE,
-                       opts=list("MAX_BB_EVAL"=10000,
-                         "EPSILON"=.Machine$double.eps,
-                         "INITIAL_MESH_SIZE"="r1.0e-01",
-                         "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
-                         "MIN_POLL_SIZE"=paste("r",1,sep=""),
-                         "DISPLAY_DEGREE"=0),
                        ...) {
-  
-  crs.messages <- getOption("crs.messages")
 
-  console <- newLineConsole()
+  ptm.start <- proc.time()
+  old.crs.messages <- getOption("crs.messages")
+  on.exit(options(crs.messages = old.crs.messages), add = TRUE)
+  crs.messages <- isTRUE(old.crs.messages)
+  is.eval.train <- is.null(zeval) && is.null(weval) && is.null(xeval)
+
+  dot.args <- list(...)
+  dot.prep <- .crsiv_prepare_dot_args(dot.args)
+  nmulti <- dot.prep$nmulti
+  nmulti.loop <- dot.prep$nmulti.loop
+  dots.preloop <- dot.prep$dots.preloop
+  dots.loop <- dot.prep$dots.loop
+
+  progress.status <- .crs_progress_status_begin(
+    enabled = display.nomad.progress,
+    surface = "iv_solve"
+  )
+  on.exit(.crs_progress_status_clear(progress.status), add = TRUE)
+  set_status <- function(msg = NULL) {
+    if (is.null(msg)) {
+      .crs_progress_status_clear(progress.status)
+    } else {
+      .crs_progress_status_update(progress.status, msg)
+    }
+    invisible(NULL)
+  }
+
+  iv_nested_context <- function(label, iteration = NULL) {
+    if (is.null(label) || !nzchar(label)) {
+      return(NULL)
+    }
+
+    if (is.null(iteration)) {
+      return(label)
+    }
+
+    sprintf("%s, iteration %s", label, format(iteration))
+  }
+
+  with_nested_crs_progress <- function(expr) {
+    expr <- substitute(expr)
+    .crs_set_messages(crs.messages, FALSE)
+    on.exit(.crs_set_messages(crs.messages, TRUE), add = TRUE)
+
+    eval(expr, envir = parent.frame())
+  }
+
+  fit.crs <- function(formula, data, dots, deriv = NULL, degree = NULL,
+                      segments = NULL, lambda = NULL, include = NULL,
+                      nmulti = NULL) {
+    with_nested_crs_progress(
+      .crsiv_fit_crs(formula = formula,
+                     data = data,
+                     dots = dots,
+                     opts = opts,
+                     display.nomad.progress = FALSE,
+                     display.warnings = display.warnings,
+                     deriv = deriv,
+                     degree = degree,
+                     segments = segments,
+                     lambda = lambda,
+                     include = include,
+                     nmulti = nmulti)
+    )
+  }
+
+  run.crs <- function(...) {
+    args <- list(...)
+    args$display.nomad.progress <- FALSE
+    with_nested_crs_progress(do.call(crs, args))
+  }
 
   ## Basic error checking
 
@@ -82,8 +154,8 @@ crsivderiv <- function(y,
 
   wnames <- names(w)
   znames <- names(z)
-  names(weval) <- wnames  
-  names(zeval) <- znames  
+  names(weval) <- wnames
+  names(zeval) <- znames
 
   ## If there exist exogenous regressors X, append these to the
   ## formulas involving Z (can be manually added to W by the user if
@@ -91,7 +163,7 @@ crsivderiv <- function(y,
 
   if(!is.null(x)) {
     xnames <- names(x)
-    names(xeval) <- xnames    
+    names(xeval) <- xnames
   }
 
   ## Now create evaluation data
@@ -100,7 +172,7 @@ crsivderiv <- function(y,
     traindata <- data.frame(y,z,w)
     evaldata <- data.frame(zeval,weval)
   } else {
-    traindata <- data.frame(y,z,w,x)    
+    traindata <- data.frame(y,z,w,x)
     evaldata <- data.frame(zeval,weval,xeval)
   }
 
@@ -122,292 +194,352 @@ crsivderiv <- function(y,
   ## Landweber-Fridman
 
   ## We begin the iteration computing phi.prime.0
-    
-  console <- printClear(console)
-  console <- printPop(console)
+
+  set_status()
   if(is.null(x)) {
-    console <- printPush(paste("Computing optimal smoothing for f(z) and S(z) for iteration 1...",sep=""),console)
+    set_status(paste("Computing optimal smoothing for f(z) and S(z) for iteration 1"," of at most ", iterate.max,"...",sep=""))
   } else {
-    console <- printPush(paste("Computing optimal smoothing  f(z) and S(z) for iteration 1...",sep=""),console)
+    set_status(paste("Computing optimal smoothing  f(z) and S(z) for iteration 1"," of at most ", iterate.max,"...",sep=""))
   }
 
-  ## Note - here I am only treating the univariate case, so let's
-  ## throw a stop with warning for now...
+  ## The current derivative implementation only supports a continuous
+  ## univariate endogenous regressor. Compute the unconditional density,
+  ## survivor, and integral operator locally using the same gaussian
+  ## normal-reference smoothing that was previously sourced from np.
 
-  if(NCOL(z) > 1) stop(" This version supports univariate z only")
-  
-  ## For all results we need the density function for Z and the
-  ## survivor function for Z (1-CDF of Z)
-  
-#  require(np)
-  
-  cat(paste("\rIteration ", 1, " of at most ", iterate.max,sep=""))
-
-  ## Let's compute the bandwidth object for the unconditional density
-  ## for the moment. Use the normal-reference rule for speed
-  ## considerations (sensitivity analysis indicates this is not
-  ## problematic).
-  
-  bw <- npudensbw(dat=z,
-                  bwmethod="normal-reference",
-                  ...)
-  model.fz <- npudens(tdat=z,
-                      bws=bw$bw,
-                      ...)
-  f.z <- predict(model.fz,newdata=evaldata)
-  model.Sz <- npudist(tdat=z,
-                      bws=bw$bw,
-                      ...)
-  S.z <- 1-predict(model.Sz,newdata=evaldata)
+  z.kernel <- .crsiv_extract_continuous_z(z, arg = "z")
+  zeval.kernel <- .crsiv_extract_continuous_z(zeval, arg = "zeval")
+  bw <- .crsiv_normal_reference_bw(z, display.warnings = display.warnings)
+  f.z <- .crsiv_gaussian_density(z.kernel, zeval.kernel, bw)
+  S.z <- .crsiv_gaussian_survivor(z.kernel, zeval.kernel, bw)
 
   if(is.null(starting.values)) {
 
-    console <- printClear(console)
-    console <- printPop(console)
+    set_status()
     if(is.null(x)) {
-      console <- printPush(paste("Computing optimal smoothing for E(y|z) for iteration 1...",sep=""),console)
+      set_status(paste("Computing optimal smoothing for E(y|z) for iteration 1 of at most ", iterate.max,"...",sep=""))
     } else {
-      console <- printPush(paste("Computing optimal smoothing  for E(y|z,x) for iteration 1...",sep=""),console)
+      set_status(paste("Computing optimal smoothing  for E(y|z,x) for iteration 1 of at most ", iterate.max,"...",sep=""))
     }
-    
+
     if(start.from == "Eyz") {
-      ## Start from E(Y|z)      
-      if(crs.messages) options(crs.messages=FALSE)
-      model.E.y.z <- crs(formula.yz,
-                         opts=opts,
+      ## Start from E(Y|z)
+      .crs_set_messages(crs.messages, FALSE)
+      model.E.y.z <- run.crs(formula.yz,
+                         opts=opts,display.nomad.progress=display.nomad.progress,display.warnings=display.warnings,
                          data=traindata,
                          deriv=1,
                          ...)
-      if(crs.messages) options(crs.messages=TRUE)    
-      E.y.z <- predict(model.E.y.z,newdata=evaldata)
-      phi.prime <- attr(E.y.z,"deriv.mat")[,1]
+      .crs_set_messages(crs.messages, TRUE)
+      phi.0 <- model.E.y.z
+      if(is.eval.train) {
+        E.y.z <- model.E.y.z$fitted.values
+        phi.prime <- model.E.y.z$deriv.mat[,1]
+      } else {
+        E.y.z_tmp <- predict(model.E.y.z,newdata=evaldata)
+        E.y.z <- as.numeric(E.y.z_tmp)
+        phi.prime <- attr(E.y.z_tmp,"deriv.mat")[,1]
+      }
     } else {
       ## Start from E(E(Y|w)|z)
-      E.y.w <- fitted(crs(formula.yw,opts=opts,data=traindata,...))
-      model.E.E.y.w.z <- crs(formula.Eywz,opts=opts,data=traindata,deriv=1,...)
-      E.E.y.w.z <- predict(model.E.E.y.w.z,newdata=evaldata,...)
-      phi.prime <- attr(E.E.y.w.z,"deriv.mat")[,1]
+      tmp.model <- run.crs(formula.yw,opts=opts,display.nomad.progress=display.nomad.progress,display.warnings=display.warnings,data=traindata,...)
+      E.y.w <- fitted(tmp.model)
+      model.E.E.y.w.z <- run.crs(formula.Eywz,opts=opts,display.nomad.progress=display.nomad.progress,display.warnings=display.warnings,data=traindata,deriv=1,...)
+      phi.0 <- model.E.E.y.w.z
+      if(is.eval.train) {
+        E.E.y.w.z <- model.E.E.y.w.z$fitted.values
+        phi.prime <- model.E.E.y.w.z$deriv.mat[,1]
+      } else {
+        E.E.y.w.z_tmp <- predict(model.E.E.y.w.z,newdata=evaldata,...)
+        E.E.y.w.z <- as.numeric(E.E.y.w.z_tmp)
+        phi.prime <- attr(E.E.y.w.z_tmp,"deriv.mat")[,1]
+      }
     }
 
   } else {
     phi.prime <- starting.values
+    .crs_set_messages(crs.messages, FALSE)
+    phi.0 <- run.crs(formula.yz,opts=opts,data=traindata,display.nomad.progress=display.nomad.progress,display.warnings=display.warnings,...)
+    .crs_set_messages(crs.messages, TRUE)
   }
-    
+
   ## Step 1 - begin iteration - for this we require \varphi_0. To
   ## compute \varphi_{0,i}, we require \mu_{0,i}. For j=0 (first
   ## term in the series), \mu_{0,i} is Y_i.
-  
-  console <- printClear(console)
-  console <- printPop(console)
+
+  set_status()
   if(is.null(x)) {
-    console <- printPush(paste("Computing optimal smoothing for E(y|w) (stopping rule) for iteration 1...",sep=""),console)
+    set_status(paste("Computing optimal smoothing for E(y|w) (stopping rule) for iteration 1 of at most ", iterate.max,"...",sep=""))
   } else {
-    console <- printPush(paste("Computing optimal smoothing  for E(y|w) (stopping rule) for iteration 1...",sep=""),console)
+    set_status(paste("Computing optimal smoothing  for E(y|w) (stopping rule) for iteration 1 of at most ", iterate.max,"...",sep=""))
   }
-  
+
   ## NOTE - this presumes univariate z case... in general this would
   ## be a continuous variable's index
-  
+
   phi <- integrate.trapezoidal(z[,1],phi.prime)
-  
+
   ## In the definition of phi we have the integral minus the mean of
   ## the integral with respect to z, so subtract the mean here
-  
+
   phi <- phi - mean(phi) + mean(y)
 
   starting.values.phi <- phi
   starting.values.phi.prime <- phi.prime
-  
-  ## For stopping rule...
-  
-  if(crs.messages) options(crs.messages=FALSE)
-  model.E.y.w <- crs(formula.yw,
-                     opts=opts,
-                     data=traindata,
-                     ...)
-  if(crs.messages) options(crs.messages=TRUE)    
-  
-  E.y.w <- predict(model.E.y.w,newdata=evaldata)
 
-  norm.stop <- numeric()
-  
-  ## For the stopping rule, we require E.phi.w
-  
-  if(crs.messages) options(crs.messages=FALSE)
-  model.E.phi.w <- crs(formula.phiw,
-                       opts=opts,
+  ## For stopping rule...
+
+    .crs_set_messages(crs.messages, FALSE)
+    model.E.y.w <- run.crs(formula.yw,
+                       opts=opts,display.nomad.progress=display.nomad.progress,display.warnings=display.warnings,
                        data=traindata,
                        ...)
-  if(crs.messages) options(crs.messages=TRUE)    
-  
-  E.phi.w <- predict(model.E.phi.w,newdata=evaldata)
+    .crs_set_messages(crs.messages, TRUE)
+
+    ## Capture instrument parameters for summary
+    degree.w <- model.E.y.w$degree
+    segments.w <- model.E.y.w$segments
+    lambda.w <- model.E.y.w$lambda
+    include.w <- model.E.y.w$include
+    num.x.w <- model.E.y.w$num.x
+    num.z.w <- model.E.y.w$num.z
+    xnames.w <- model.E.y.w$xnames
+    znames.w <- model.E.y.w$znames
+
+    E.y.w <- if(is.eval.train) fitted(model.E.y.w) else predict(model.E.y.w,newdata=evaldata,...)
+  norm.stop <- numeric()
+
+  ## For the stopping rule, we require E.phi.w
+
+  .crs_set_messages(crs.messages, FALSE)
+  traindata$phi <- phi
+  model.E.phi.w <- run.crs(formula.phiw,
+                       opts=opts,display.nomad.progress=display.nomad.progress,display.warnings=display.warnings,
+                       data=traindata,
+                       ...)
+  .crs_set_messages(crs.messages, TRUE)
+
+  E.phi.w <- if(is.eval.train) fitted(model.E.phi.w) else predict(model.E.phi.w,newdata=evaldata)
 
   ## Now we compute mu.0 (a residual of sorts)
-  
+
   mu <- y - phi
-  
+
   ## Now we repeat this entire process using mu = y - phi.0 rather
   ## than y
-  
+
   mean.mu <- mean(mu)
-  
+
   if(smooth.residuals) {
 
     ## Smooth residuals (smooth of (y-phi) on w)
 
-    if(crs.messages) options(crs.messages=FALSE)
-    model.E.mu.w <- crs(formula.muw,
-                        opts=opts,
-                        data=traindata,
-                        ...)
-    
+    .crs_set_messages(crs.messages, FALSE)
+    traindata$mu <- mu
+
+    model.E.mu.w <- fit.crs(formula = formula.muw,
+                            data = traindata,
+                            dots = dots.preloop)
+
+    ## Capture initial parameters for warm start
+    degree.muw <- model.E.mu.w$degree
+    segments.muw <- model.E.mu.w$segments
+    lambda.muw <- model.E.mu.w$lambda
+    include.muw <- model.E.mu.w$include
+
+    ## Initialize unused warm start parameters
+    degree.phiw <- NULL
+    segments.phiw <- NULL
+    lambda.phiw <- NULL
+    include.phiw <- NULL
+
+    .crs_set_messages(crs.messages, TRUE)
+
     ## We require the fitted values...
-    
-    predicted.model.E.mu.w <- predict(model.E.mu.w,newdata=evaldata)
-    if(crs.messages) options(crs.messages=TRUE)    
-    
+
+    predicted.model.E.mu.w <- if(is.eval.train) fitted(model.E.mu.w) else predict(model.E.mu.w,newdata=evaldata)
+
     ## We again require the mean of the fitted values
-    
+
     mean.predicted.model.E.mu.w <- mean(predicted.model.E.mu.w)
-    
+
   } else {
 
     ## Not smoothing residuals (difference of E(Y|w) and smooth of phi
     ## on w)
 
-    if(crs.messages) options(crs.messages=FALSE)
-    model.E.phi.w <- crs(formula.phiw,
-                         opts=opts,
-                         data=traindata,
-                         ...)
+    .crs_set_messages(crs.messages, FALSE)
+    traindata$phi <- phi
+
+    model.E.phi.w <- fit.crs(formula = formula.phiw,
+                             data = traindata,
+                             dots = dots.preloop)
+
+    ## Capture initial parameters for warm start
+    degree.phiw <- model.E.phi.w$degree
+    segments.phiw <- model.E.phi.w$segments
+    lambda.phiw <- model.E.phi.w$lambda
+    include.phiw <- model.E.phi.w$include
+
+    ## Initialize unused warm start parameters
+    degree.muw <- NULL
+    segments.muw <- NULL
+    lambda.muw <- NULL
+    include.muw <- NULL
+
+    .crs_set_messages(crs.messages, TRUE)
 
     ## We require the fitted values...
-    
-    predicted.model.E.mu.w <- E.y.w - predict(model.E.phi.w,newdata=evaldata)
-    if(crs.messages) options(crs.messages=TRUE)    
-    
+
+    predicted.model.E.mu.w <- E.y.w - (if(is.eval.train) fitted(model.E.phi.w) else predict(model.E.phi.w,newdata=evaldata))
+
     ## We again require the mean of the fitted values
-    
+
     mean.predicted.model.E.mu.w <- mean(E.y.w) - mean(predicted.model.E.mu.w)
-    
+
   }
 
   norm.stop[1] <- sum(predicted.model.E.mu.w^2)/sum(E.y.w^2)
-    
+
   ## Now we compute T^* applied to mu
-  
-  cdf.weighted.average <- npksum(txdat=z,
-                                 exdat=zeval,
-                                 tydat=as.matrix(predicted.model.E.mu.w),
-                                 operator="integral",
-                                 bws=bw$bw)$ksum/nrow(traindata)
-  
+
+  cdf.weighted.average <- .crsiv_gaussian_integral_apply(
+    z.train = z.kernel,
+    z.eval = zeval.kernel,
+    rhs = predicted.model.E.mu.w,
+    bw = bw
+  )
+
   survivor.weighted.average <- mean.predicted.model.E.mu.w - cdf.weighted.average
-  
+
   T.star.mu <- (survivor.weighted.average-S.z*mean.mu)/f.z
-    
+
   ## Now we update phi.prime.0, this provides phi.prime.1, and now
   ## we can iterate until convergence... note we replace phi.prime.0
   ## with phi.prime.1 (i.e. overwrite phi.prime)
-  
+
   phi.prime <- phi.prime + constant*T.star.mu
-  
-  phi.prime.mat <- phi.prime
-  phi.mat <- phi
-      
+
+  phi.prime.mat <- matrix(NA, nrow=length(phi.prime), ncol=iterate.max)
+  phi.mat <- matrix(NA, nrow=length(phi), ncol=iterate.max)
+  phi.prime.mat[,1] <- phi.prime
+  phi.mat[,1] <- phi
+
   ## This we iterate...
-  
-  for(j in 2:iterate.max) {
+
+  convergence <- "ITERATE_MAX"
+  if (iterate.max > 1L) for (j in seq.int(2L, iterate.max)) {
 
     ## Save previous run in case stop norm increases
-    
-    cat(paste("\rIteration ", j, " of at most ", iterate.max,sep=""))
-    
-    console <- printClear(console)
-    console <- printPop(console)
+
+    set_status()
     if(is.null(x)) {
-      console <- printPush(paste("Computing optimal smoothing and phi(z) for iteration ", j,"...",sep=""),console)
+      set_status(paste("Computing optimal smoothing and phi(z) for iteration ", j," of at most ", iterate.max,"...",sep=""))
     } else {
-      console <- printPush(paste("Computing optimal smoothing and phi(z,x) for iteration ", j,"...",sep=""),console)
+      set_status(paste("Computing optimal smoothing and phi(z,x) for iteration ", j," of at most ", iterate.max,"...",sep=""))
     }
-    
+
     ## NOTE - this presumes univariate z case... in general this would
     ## be a continuous variable's index
-    
+
     phi <- integrate.trapezoidal(z[,1],phi.prime)
-    
+
     ## In the definition of phi we have the integral minus the mean of
     ## the integral with respect to z, so subtract the mean here
-    
+
     phi <- phi - mean(phi) + mean(y)
-    
+
     ## Now we compute mu.0 (a residual of sorts)
-    
+
     mu <- y - phi
-    
+
     ## Now we repeat this entire process using mu = y = phi.0 rather than y
     ## Next, we regress require \mu_{0,i} W
 
     if(smooth.residuals) {
-      
+
       ## Smooth residuals (smooth of (y-phi) on w)
-      
-      if(crs.messages) options(crs.messages=FALSE)
-      model.E.mu.w <- crs(formula.muw,
-                          opts=opts,
-                          data=traindata,
-                          ...)
-      
+
+      .crs_set_messages(crs.messages, FALSE)
+      traindata$mu <- mu
+
+      model.E.mu.w <- fit.crs(formula = formula.muw,
+                              data = traindata,
+                              dots = dots.loop,
+                              degree = degree.muw,
+                              segments = segments.muw,
+                              lambda = lambda.muw,
+                              include = include.muw,
+                              nmulti = nmulti.loop)
+
+      degree.muw <- model.E.mu.w$degree
+      segments.muw <- model.E.mu.w$segments
+      lambda.muw <- model.E.mu.w$lambda
+      include.muw <- model.E.mu.w$include
+
       ## We require the fitted values...
-      
-      predicted.model.E.mu.w <- predict(model.E.mu.w,newdata=evaldata)
-      if(crs.messages) options(crs.messages=TRUE)    
-      
+
+      predicted.model.E.mu.w <- if(is.eval.train) fitted(model.E.mu.w) else predict(model.E.mu.w,newdata=evaldata)
+      .crs_set_messages(crs.messages, TRUE)
+
       ## We again require the mean of the fitted values
-      
+
       mean.predicted.model.E.mu.w <- mean(predicted.model.E.mu.w)
-      
+
     } else {
-      
+
       ## Not smoothing residuals (difference of E(Y|w) and smooth of
       ## phi on w)
 
-      if(crs.messages) options(crs.messages=FALSE)
-      model.E.phi.w <- crs(formula.phiw,
-                           opts=opts,
-                           data=traindata,
-                           ...)
-      
+      .crs_set_messages(crs.messages, FALSE)
+      traindata$phi <- phi
+
+      model.E.phi.w <- fit.crs(formula = formula.phiw,
+                               data = traindata,
+                               dots = dots.loop,
+                               degree = degree.phiw,
+                               segments = segments.phiw,
+                               lambda = lambda.phiw,
+                               include = include.phiw,
+                               nmulti = nmulti.loop)
+
+      degree.phiw <- model.E.phi.w$degree
+      segments.phiw <- model.E.phi.w$segments
+      lambda.phiw <- model.E.phi.w$lambda
+      include.phiw <- model.E.phi.w$include
+
       ## We require the fitted values...
-      
-      predicted.model.E.mu.w <- E.y.w - predict(model.E.phi.w,newdata=evaldata)
-      if(crs.messages) options(crs.messages=TRUE)    
-      
+
+      predicted.model.E.mu.w <- E.y.w - (if(is.eval.train) fitted(model.E.phi.w) else predict(model.E.phi.w,newdata=evaldata))
+      .crs_set_messages(crs.messages, TRUE)
+
       ## We again require the mean of the fitted values
-      
+
       mean.predicted.model.E.mu.w <- mean(E.y.w) - mean(predicted.model.E.mu.w)
-      
+
     }
-    
-    norm.stop[j] <- ifelse(penalize.iteration,j*sum(predicted.model.E.mu.w^2)/sum(E.y.w^2),sum(predicted.model.E.mu.w^2)/sum(E.y.w^2))
-    
+
+    norm.raw <- sum(predicted.model.E.mu.w^2) / sum(E.y.w^2)
+    norm.stop[j] <- if (penalize.iteration) j * norm.raw else norm.raw
+
     ## Now we compute T^* applied to mu
-    
-    cdf.weighted.average <- npksum(txdat=z,
-                                   exdat=zeval,
-                                   tydat=as.matrix(predicted.model.E.mu.w),
-                                   operator="integral",
-                                   bws=bw$bw)$ksum/nrow(traindata)
-    
+
+    cdf.weighted.average <- .crsiv_gaussian_integral_apply(
+      z.train = z.kernel,
+      z.eval = zeval.kernel,
+      rhs = predicted.model.E.mu.w,
+      bw = bw
+    )
+
     survivor.weighted.average <- mean.predicted.model.E.mu.w - cdf.weighted.average
-    
+
     T.star.mu <- (survivor.weighted.average-S.z*mean.predicted.model.E.mu.w)/f.z
-    
+
     ## Now we update, this provides phi.prime.1, and now we can iterate until convergence...
-      
+
     phi.prime <- phi.prime + constant*T.star.mu
-    phi.prime.mat <- cbind(phi.prime.mat,phi.prime)
-    phi.mat <- cbind(phi.mat,phi)
+    phi.prime.mat[,j] <- phi.prime
+    phi.mat[,j] <- phi
 
     ## The number of iterations in LF is asymptotically equivalent to
     ## 1/alpha (where alpha is the regularization parameter in
@@ -420,11 +552,11 @@ crsivderiv <- function(y,
     ## case in which beta = 0 and then the number of iterations is ~
     ## N^0.5. Note that derivative estimation seems to require more
     ## iterations hence the heuristic sqrt(N)
-    
+
     if(j > round(sqrt(nrow(traindata)))  && !is.monotone.increasing(norm.stop)) {
       ## If stopping rule criterion increases or we are below stopping
       ## tolerance then break
-      
+
       if(stop.on.increase && norm.stop[j] > norm.stop[j-1]) {
         convergence <- "STOP_ON_INCREASE"
         break()
@@ -435,10 +567,11 @@ crsivderiv <- function(y,
       }
 
     }
-    
-    convergence <- "ITERATE_MAX"
-    
+
   }
+
+  phi.mat <- phi.mat[, seq_along(norm.stop), drop = FALSE]
+  phi.prime.mat <- phi.prime.mat[, seq_along(norm.stop), drop = FALSE]
 
   ## Extract minimum, and check for monotone increasing function and
   ## issue warning in that case. Otherwise allow for an increasing
@@ -447,42 +580,175 @@ crsivderiv <- function(y,
   ## and take the min from where the initial inflection point occurs
   ## to the length of norm.stop
 
-  norm.value <- norm.stop/(1:length(norm.stop))
+  stop.pick <- .crsiv_select_stop_index(norm.stop)
+  norm.value <- stop.pick$norm.value
 
-  if(which.min(norm.stop) == 1 && is.monotone.increasing(norm.stop)) {
-    warning("Stopping rule increases monotonically (consult model$norm.stop):\nThis could be the result of an inspired initial value (unlikely)\nNote: we suggest manually choosing phi.0 and restarting (e.g. instead set `starting.values' to E[E(Y|w)|z])")
+  if(stop.pick$monotone.failure) {
+    .crsiv_warn_monotone_increasing(display.warnings)
     convergence <- "FAILURE_MONOTONE_INCREASING"
-#    phi <- starting.values.phi
-#    phi.prime <- starting.values.phi.prime
-    j <- 1
-    while(norm.value[j+1] > norm.value[j]) j <- j + 1
-    j <- j-1 + which.min(norm.value[j:length(norm.value)])
-    phi <- phi.mat[,j]
-    phi.prime <- phi.prime.mat[,j]
+    #    phi <- starting.values.phi
+    #    phi.prime <- starting.values.phi.prime
+  }
+  j <- stop.pick$index
+  phi <- phi.mat[,j]
+  phi.prime <- phi.prime.mat[,j]
+
+  set_status()
+
+  .crsiv_warn_iterate_max(display.warnings, j, iterate.max)
+
+  .crs_set_messages(crs.messages, FALSE)
+  traindata$y <- traindata$y - (fitted(phi.0)-phi)
+
+  model <- run.crs(formula.yz,
+               cv="none",
+               degree=phi.0$degree,
+               segments=phi.0$segments,
+               lambda=phi.0$lambda,
+               include=phi.0$include,
+               kernel=phi.0$kernel,
+               basis=phi.0$basis,
+               knots=phi.0$knots,
+               tau=phi.0$tau,
+               deriv=1,
+               data=traindata,
+               weights=phi.0$weights)
+  .crs_set_messages(crs.messages, TRUE)
+
+  model$phi <- phi
+  model$phi.prime <- phi.prime
+  model$phi.mat <- phi.mat
+  model$phi.prime.mat <- phi.prime.mat
+  model$num.iterations <- j
+  model$norm.stop <- norm.stop
+  model$norm.value <- norm.value
+  model$convergence <- convergence
+  model$starting.values.phi <- starting.values.phi
+  model$starting.values.phi.prime <- starting.values.phi.prime
+  model$nmulti <- nmulti
+  model$ptm <- proc.time() - ptm.start
+
+  ## Attach instrument parameters for summary
+  model$degree.w <- degree.w
+  model$segments.w <- segments.w
+  model$lambda.w <- lambda.w
+  model$include.w <- include.w
+  model$num.x.w <- num.x.w
+  model$num.z.w <- num.z.w
+  model$xnames.w <- xnames.w
+  model$znames.w <- znames.w
+
+  class(model) <- c("crsivderiv", "crs")
+
+  return(model)
+
+}
+
+print.crsivderiv <- function(x, ...) {
+  cat("Call:\n")
+  print(x$call)
+}
+
+summary.crsivderiv <- function(object, ...) {
+  cat("Call:\n")
+  print(object$call)
+
+  if(!object$kernel) {
+    if(is.null(object$tau))
+      cat("\nNonparametric Instrumental Spline Derivative Estimation\n",sep="")
+    else
+      cat("\nNonparametric Instrumental Spline Quantile Derivative Estimation\n",sep="")
   } else {
-    ## Ignore the initial increasing portion, take the min to the
-    ## right of where the initial inflection point occurs
-    j <- 1
-    while(norm.stop[j+1] > norm.stop[j]) j <- j + 1
-    j <- j-1 + which.min(norm.stop[j:length(norm.stop)])
-    phi <- phi.mat[,j]
-    phi.prime <- phi.prime.mat[,j]
+    if(is.null(object$tau))
+      cat("\nNonparametric Instrumental Spline Derivative Estimation (Kernel Weighting)\n",sep="")
+    else
+      cat("\nNonparametric Instrumental Spline Quantile Derivative Estimation (Kernel Weighting)\n",sep="")
   }
 
-  console <- printClear(console)
-  console <- printPop(console)
-  
-  if(j == iterate.max) warning(" iterate.max reached: increase iterate.max or inspect norm.stop vector")
-  
-  return(list(phi=phi,
-              phi.prime=phi.prime,
-              phi.mat=phi.mat,
-              phi.prime.mat=phi.prime.mat,
-              num.iterations=j,
-              norm.stop=norm.stop,
-              norm.value=norm.value,
-              convergence=convergence,
-              starting.values.phi=starting.values.phi,
-              starting.values.phi.prime=starting.values.phi.prime))
-  
+  if(!is.null(object$tau)) cat(paste("\nQuantile estimated: tau = ",format(object$tau),sep=""),sep="")
+
+  cat(paste("\nThere are ",format(object$num.x), " continuous predictors",sep=""),sep="")
+  if(!is.null(object$num.z)) cat(paste("\nThere are ",format(object$num.z), " categorical predictors",sep=""),sep="")
+
+  for(j in seq_len(object$num.x))
+    cat(paste("\nSpline degree/number of segments for ",format(object$xnames[j]),": ",format(object$degree[j]),"/",format(object$segments[j]),sep=""),sep="")
+  if(!is.null(object$include)) for(j in seq_along(object$include))
+    cat(paste("\nInclusion indicator for ",format(object$znames[j]),": ",format(object$include[j]),sep=""),sep="")
+  if(!is.null(object$lambda)) for(j in seq_along(object$lambda))
+    cat(paste("\nBandwidth for ",format(object$znames[j]),": ",format(object$lambda[j]),sep=""),sep="")
+
+  if(!is.null(object$num.x.w)) {
+    for(j in seq_len(object$num.x.w))
+      cat(paste("\nSpline degree/number of segments for ",format(object$xnames.w[j]),": ",format(object$degree.w[j]),"/",format(object$segments.w[j]),sep=""),sep="")
+  }
+  if(!is.null(object$num.z.w)) {
+    if(!is.null(object$include.w)) for(j in seq_along(object$include.w))
+      cat(paste("\nInclusion indicator for ",format(object$znames.w[j]),": ",format(object$include.w[j]),sep=""),sep="")
+    if(!is.null(object$lambda.w)) for(j in seq_along(object$lambda.w))
+      cat(paste("\nBandwidth for ",format(object$znames.w[j]),": ",format(object$lambda.w[j]),sep=""),sep="")
+  }
+
+  cat(paste("\nModel complexity proxy: ", format(object$complexity), sep=""))
+  cat(paste("\nKnot type: ", format(object$knots), sep=""))
+  if(object$num.x > 1) cat(paste("\nBasis type: ",format(object$basis),sep=""))
+
+  cat(paste("\nTraining observations: ", format(object$nobs), sep=""))
+
+  cat(paste("\n\nRegularization method: Landweber-Fridman",sep=""))
+  cat(paste("\nNumber of iterations: ", format(object$num.iterations), sep=""))
+  cat(paste("\nStopping rule value: ", format(object$norm.stop[length(object$norm.stop)],digits=8), sep=""))
+
+  cat(paste("\nNumber of multistarts: ", format(object$nmulti), sep=""))
+  cat(paste("\nEstimation time: ", formatC(object$ptm[1],digits=1,format="f"), " seconds",sep=""))
+  cat("\n\n")
+}
+
+plot.crsivderiv <- function(x,
+                            plot.data = FALSE,
+                            phi = FALSE,
+                            ...) {
+
+  object <- x
+
+  ## We only support univariate endogenous predictor z
+  if(object$num.x > 1 || !is.null(object$num.z)) stop(" only univariate z is supported")
+
+  z <- object$xz[,1]
+  y <- object$y
+  zname <- object$xnames[1]
+  yname <- "y"
+
+  if(phi) {
+    ## Plot the structural function phi
+    fit <- object$phi
+    ylab <- yname
+  } else {
+    ## Plot the derivative phi.prime (default for crsivderiv)
+    fit <- object$phi.prime
+    ylab <- paste("d", yname, "/d", zname, sep="")
+  }
+
+  if(plot.data && !phi) {
+      ## Scatter data doesn't make sense for derivative plots directly
+      plot.data <- FALSE
+  }
+
+  if(plot.data) {
+    plot(z, y,
+         xlab=zname,
+         ylab=yname,
+         type="p",
+         col="lightgrey",
+         ...)
+    lines(z[order(z)], fit[order(z)],
+          lwd=2,
+          ...)
+  } else {
+    plot(z[order(z)], fit[order(z)],
+         type="l",
+         xlab=zname,
+         ylab=ylab,
+         lwd=2,
+         ...)
+  }
 }

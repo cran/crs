@@ -51,9 +51,9 @@ are 526 observations in total. }
 data(wage1)
 
 ## Cross-validated model selection for spline degree and bandwidths Note
-## - we override the default nmulti here to get a quick illustration
-## (we don't advise doing this, in fact advise using more restarts in
-## serious applications)
+## - we override the default degree.max and segments.max here given the 
+## large number of predictors and small sample size (the tensor spline basis 
+## will become singular hampering search)
 
 model <- crs(lwage~married+
              female+
@@ -61,12 +61,10 @@ model <- crs(lwage~married+
              educ+
              exper+
              tenure,
-             basis="additive",
-             complexity="degree",
-             data=wage1,
-             segments=c(1,1,1),
-             nmulti=1)
-
+             degree.max=5, 
+             segments.max=5,              
+             data=wage1)
+             
 summary(model)
 
 ## Residual plots
@@ -77,25 +75,7 @@ plot(model,mean=TRUE)
 plot(model,deriv=1)
 ## Partial second derivative plots (control for non axis predictors)
 plot(model,deriv=2)
-## Compare with local linear kernel regression
-require(np)
-model <- npreg(lwage~married+
-               female+
-               nonwhite+                
-               educ+
-               exper+
-               tenure,
-               regtype="ll",
-               bwmethod="cv.aic",
-               data=wage1)
 
-summary(model)
-
-## Partial mean plots (control for non axis predictors)
-plot(model,common.scale=FALSE)
-## Partial first derivative plots (control for non axis predictors)
-plot(model,gradients=TRUE,common.scale=FALSE)
-detach("package:np")
 } % end dontrun
 }
 

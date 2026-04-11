@@ -39,19 +39,20 @@ gen.xnorm <- function(x=NULL,
                       lbound=NULL,
                       ubound=NULL,
                       er=NULL,
-                      n.integrate=NULL) {
+                      n.integrate=NULL,
+                      display.warnings=TRUE) {
 
   er <- extendrange(x,f=er)
   if(!is.null(lbound)) er[1] <- lbound
   if(!is.null(ubound)) er[2] <- ubound
-  if(min(x) < er[1] | max(x) > er[2]) warning(" data extends beyond the range of `er'")
+  if(min(x) < er[1] || max(x) > er[2]) if(display.warnings) warning(" data extends beyond the range of `er'")
   xint <- sort(as.numeric(c(seq(er[1],er[2],length=round(n.integrate/2)),
-                 quantile(x,seq(sqrt(.Machine$double.eps),1-sqrt(.Machine$double.eps),length=round(n.integrate/2))))))
+                            quantile(x,seq(sqrt(.Machine$double.eps),1-sqrt(.Machine$double.eps),length=round(n.integrate/2))))))
   if(is.null(xeval)) {
     xnorm <- c(x,xint)
   } else {
     xnorm <- c(xeval,x,xint)
-    if(min(xeval) < er[1] | max(xeval) > er[2]) warning(" evaluation data extends beyond the range of `er'")
+    if(min(xeval) < er[1] || max(xeval) > er[2]) if(display.warnings) warning(" evaluation data extends beyond the range of `er'")
   }
   ## Either x will be the first 1:length(x) elements in
   ## object[rank.xnorm] or xeval will be the first 1:length(xeval)
@@ -68,7 +69,8 @@ density.basis <- function(x=NULL,
                           basis="tensor",
                           knots="quantiles",
                           monotone=TRUE,
-			  ...) {
+                          display.warnings=TRUE,
+                          ...) {
 
   ## To obtain the constant of integration for B-spline bases, we need
   ## to compute log(integral exp(P%*%beta)) so we take an equally
@@ -91,7 +93,8 @@ density.basis <- function(x=NULL,
                                         xeval=xnorm,
                                         K=cbind(degree,segments+if(monotone){2}else{0}),
                                         knots=knots,
-                                        basis=basis))
+                                        basis=basis,
+                                        display.warnings=display.warnings))
 
   if(monotone) Pnorm <- Pnorm[,-c(2,degree+segments+1)]
 
@@ -104,7 +107,8 @@ density.basis <- function(x=NULL,
                                         xeval=xnorm,
                                         K=cbind(1,1),
                                         knots=knots,
-                                        basis=basis))
+                                        basis=basis,
+                                        display.warnings=display.warnings))
 
   ## We append the linear basis to the left and rightmost polynomial
   ## bases. We match the slope of the linear basis to that of the
@@ -173,7 +177,8 @@ density.deriv.basis <- function(x=NULL,
                                 monotone=TRUE,
                                 deriv.index=1,
                                 deriv=1,
-				...) {
+                                display.warnings=TRUE,
+                                ...) {
 
   suppressWarnings(Pnorm.deriv <- prod.spline(x=x,
                                               xeval=xnorm,
@@ -181,7 +186,8 @@ density.deriv.basis <- function(x=NULL,
                                               knots=knots,
                                               basis=basis,
                                               deriv.index=deriv.index,
-                                              deriv=deriv))
+                                              deriv=deriv,
+                                              display.warnings=display.warnings))
 
   if(monotone) Pnorm.deriv <- Pnorm.deriv[,-c(2,degree+segments+1)]
 
@@ -191,7 +197,8 @@ density.deriv.basis <- function(x=NULL,
                                         knots=knots,
                                         basis=basis,
                                         deriv.index=deriv.index,
-                                        deriv=deriv))
+                                        deriv=deriv,
+                                        display.warnings=display.warnings))
 
   ## For the derivative bases on the extended range `xnorm', above
   ## and below max(x)/min(x) we assign the bases to constants
@@ -217,34 +224,36 @@ density.deriv.basis <- function(x=NULL,
 clsd <- function(x=NULL,
                  beta=NULL,
                  xeval=NULL,
-                 degree=NULL,
-                 segments=NULL,
-                 degree.min=2,
-                 degree.max=25,
-                 segments.min=1,
-                 segments.max=100,
-                 lbound=NULL,
-                 ubound=NULL,
                  basis="tensor",
-                 knots="quantiles",
-                 penalty=NULL,
-                 deriv.index=1,
+                 degree=NULL,
+                 degree.max=25,
+                 degree.min=2,
                  deriv=1,
-                 elastic.max=TRUE,
-                 elastic.diff=3,
+                 deriv.index=1,
+                 display.nomad.progress=TRUE,
+                 display.warnings=TRUE,
                  do.gradient=TRUE,
+                 elastic.diff=3,
+                 elastic.max=TRUE,
                  er=NULL,
+                 knots="quantiles",
+                 lbound=NULL,
+                 max.attempts=25,
+                 maxit=10^5,
+                 method = c("L-BFGS-B", "Nelder-Mead", "BFGS", "CG", "SANN"),
                  monotone=TRUE,
                  monotone.lb=-250,
                  n.integrate=500,
                  nmulti=1,
-                 method = c("L-BFGS-B", "Nelder-Mead", "BFGS", "CG", "SANN"),
-                 verbose=FALSE,
+                 NOMAD=FALSE,
+                 penalty=NULL,
                  quantile.seq=seq(.01,.99,by=.01),
                  random.seed=42,
-                 maxit=10^5,
-                 max.attempts=25,
-                 NOMAD=FALSE) {
+                 segments=NULL,
+                 segments.max=100,
+                 segments.min=1,
+                 ubound=NULL,
+                 verbose=FALSE) {
 
   if(elastic.max && !NOMAD) {
     degree.max <- 3
@@ -278,7 +287,8 @@ clsd <- function(x=NULL,
                              lbound=lbound,
                              ubound=ubound,
                              er=er,
-                             n.integrate=n.integrate)
+                             n.integrate=n.integrate,
+                             display.warnings=display.warnings)
 
   xnorm <- gen.xnorm.out$xnorm
   rank.xnorm <- gen.xnorm.out$rank.xnorm
@@ -314,7 +324,9 @@ clsd <- function(x=NULL,
                                                 verbose=verbose,
                                                 max.attempts=max.attempts,
                                                 random.seed=random.seed,
-                                                NOMAD=NOMAD))
+                                                NOMAD=NOMAD,
+                                                display.warnings=display.warnings,
+                                                display.nomad.progress=display.nomad.progress))
 
     beta <- ls.ml.out$beta
     degree <- ls.ml.out$degree
@@ -330,7 +342,8 @@ clsd <- function(x=NULL,
                                lbound=lbound,
                                ubound=ubound,
                                er=er,
-                               n.integrate=n.integrate)
+                               n.integrate=n.integrate,
+                               display.warnings=display.warnings)
 
     xnorm <- gen.xnorm.out$xnorm
     rank.xnorm <- gen.xnorm.out$rank.xnorm
@@ -347,7 +360,8 @@ clsd <- function(x=NULL,
                                                   segments=segments,
                                                   basis=basis,
                                                   knots=knots,
-                                                  monotone=monotone))
+                                                  monotone=monotone,
+                                                  display.warnings=display.warnings))
 
   if(ncol(Pnorm)!=length(beta)) stop(paste(" Incompatible arguments: beta must be of dimension ",ncol(Pnorm),sep=""))
 
@@ -386,7 +400,8 @@ clsd <- function(x=NULL,
                                                                 knots=knots,
                                                                 monotone=monotone,
                                                                 deriv.index=deriv.index,
-                                                                deriv=deriv))
+                                                                deriv=deriv,
+                                                                display.warnings=display.warnings))
 
     f.norm.deriv <- as.numeric(f.norm*Pnorm.deriv%*%beta)
 
@@ -401,7 +416,7 @@ clsd <- function(x=NULL,
   ## Nelson (2006))
 
   quantile.vec <- numeric(length(quantile.seq))
-  for(i in 1:length(quantile.seq)) {
+  for(i in seq_along(quantile.seq)) {
     if(quantile.seq[i]>=0.5) {
       quantile.vec[i] <- max(xnorm[F.norm<=quantile.seq[i]])
     } else {
@@ -413,29 +428,31 @@ clsd <- function(x=NULL,
   ## either sample x or evaluation xeval
 
   if(is.null(xeval)) {
-    f <-   f.norm[rank.xnorm][1:length(x)]
-    F <-   F.norm[rank.xnorm][1:length(x)]
-    f.norm <- f.norm[rank.xnorm][(length(x)+1):length(f.norm)]
-    F.norm <- F.norm[rank.xnorm][(length(x)+1):length(F.norm)]
-    xnorm <- xnorm[rank.xnorm][(length(x)+1):length(xnorm)]
+    tail.idx <- .crs_tail_index(length(x) + 1L, length(f.norm))
+    f <-   f.norm[rank.xnorm][seq_along(x)]
+    F <-   F.norm[rank.xnorm][seq_along(x)]
+    f.norm <- f.norm[rank.xnorm][tail.idx]
+    F.norm <- F.norm[rank.xnorm][tail.idx]
+    xnorm <- xnorm[rank.xnorm][tail.idx]
     if(deriv>0) {
-      f.deriv <- f.norm.deriv[rank.xnorm][1:length(x)]
-      f.norm.deriv <- f.norm.deriv[rank.xnorm][(length(x)+1):length(f.norm.deriv)]
+      f.deriv <- f.norm.deriv[rank.xnorm][seq_along(x)]
+      f.norm.deriv <- f.norm.deriv[rank.xnorm][tail.idx]
     }
-    P <-   Pnorm[rank.xnorm,][1:length(x),]
-    P.beta <- Pnorm.beta[rank.xnorm][1:length(x)]
+    P <-   Pnorm[rank.xnorm,][seq_along(x),]
+    P.beta <- Pnorm.beta[rank.xnorm][seq_along(x)]
   } else {
-    f <-   f.norm[rank.xnorm][1:length(xeval)]
-    F <-   F.norm[rank.xnorm][1:length(xeval)]
-    f.norm <- f.norm[rank.xnorm][(length(x)+length(xeval)+1):length(f.norm)]
-    F.norm <- F.norm[rank.xnorm][(length(x)+length(xeval)+1):length(F.norm)]
-    xnorm <- xnorm[rank.xnorm][(length(x)+length(xeval)+1):length(xnorm)]
+    tail.idx <- .crs_tail_index(length(x) + length(xeval) + 1L, length(f.norm))
+    f <-   f.norm[rank.xnorm][seq_along(xeval)]
+    F <-   F.norm[rank.xnorm][seq_along(xeval)]
+    f.norm <- f.norm[rank.xnorm][tail.idx]
+    F.norm <- F.norm[rank.xnorm][tail.idx]
+    xnorm <- xnorm[rank.xnorm][tail.idx]
     if(deriv>0) {
-      f.deriv <- f.norm.deriv[rank.xnorm][1:length(xeval)]
-      f.norm.deriv <- f.norm.deriv[rank.xnorm][(length(x)+length(xeval)+1):length(f.norm.deriv)]
+      f.deriv <- f.norm.deriv[rank.xnorm][seq_along(xeval)]
+      f.norm.deriv <- f.norm.deriv[rank.xnorm][tail.idx]
     }
-    P <-   Pnorm[rank.xnorm,][1:length(xeval),]
-    P.beta <- Pnorm.beta[rank.xnorm][1:length(xeval)]
+    P <-   Pnorm[rank.xnorm,][seq_along(xeval),]
+    P.beta <- Pnorm.beta[rank.xnorm][seq_along(xeval)]
   }
 
   clsd.return <- list(density=f,
@@ -497,7 +514,7 @@ sum.log.density.gradient <- function(beta=NULL,
   exp.Pint.beta <- as.numeric(exp(Pint%*%beta))
   exp.Pint.beta.Pint <- exp.Pint.beta*Pint
   int.exp.Pint.beta.Pint <- numeric()
-  for(i in 1:complexity) int.exp.Pint.beta.Pint[i] <- integrate.trapezoidal.sum(xint,exp.Pint.beta.Pint[,i])
+  for(i in seq_len(complexity)) int.exp.Pint.beta.Pint[i] <- integrate.trapezoidal.sum(xint,exp.Pint.beta.Pint[,i])
   return(2*(colSumsP-length.x*int.exp.Pint.beta.Pint/integrate.trapezoidal.sum(xint,exp.Pint.beta)))
 
 }
@@ -527,7 +544,9 @@ ls.ml <- function(x=NULL,
                   verbose=NULL,
                   max.attempts=NULL,
                   random.seed=NULL,
-                  NOMAD=FALSE) {
+                  NOMAD=FALSE,
+                  display.warnings=TRUE,
+                  display.nomad.progress=TRUE) {
 
   ## This function conducts log spline maximum
   ## likelihood. Multistarting is supported as is breaking out to
@@ -536,89 +555,156 @@ ls.ml <- function(x=NULL,
 
   ## Save seed prior to setting
 
-  if(exists(".Random.seed", .GlobalEnv)) {
-    save.seed <- get(".Random.seed", .GlobalEnv)
-    exists.seed = TRUE
-  } else {
-    exists.seed = FALSE
-  }
+  seed.state <- .crs_capture_seed()
 
   set.seed(random.seed)
 
   if(missing(x)) stop(" You must provide data")
 
+  progress.env <- new.env(parent = emptyenv())
+  progress.env$enabled <- isTRUE(display.nomad.progress) &&
+    isTRUE(getOption("crs.messages", TRUE))
+  progress.env$count <- 0L
+  progress.env$state <- NULL
+  progress.env$activity <- NULL
+  progress.env$label <- if (isTRUE(NOMAD)) "NOMAD search" else "Logspline search"
+  progress.env$surface <- if (isTRUE(NOMAD)) "nomad" else "solver"
+
+  progress_step <- function(detail = NULL) {
+    if (!isTRUE(progress.env$enabled)) {
+      return(invisible(NULL))
+    }
+
+    progress.env$count <- progress.env$count + 1L
+    if (is.null(progress.env$state)) {
+      progress.env$state <- .crs_progress_begin(
+        progress.env$label,
+        surface = progress.env$surface
+      )
+    }
+    progress.env$state <- .crs_progress_step(
+      progress.env$state,
+      done = progress.env$count,
+      detail = detail
+    )
+    invisible(NULL)
+  }
+
+  progress_note <- function(detail) {
+    if (!isTRUE(progress.env$enabled)) {
+      return(invisible(NULL))
+    }
+
+    if (!is.null(progress.env$activity)) {
+      .crs_progress_activity_end(progress.env$activity)
+      progress.env$activity <- NULL
+    }
+
+    progress.env$activity <- .crs_progress_activity_begin(
+      detail,
+      surface = progress.env$surface
+    )
+    invisible(NULL)
+  }
+
+  progress_note_end <- function() {
+    if (!is.null(progress.env$activity)) {
+      .crs_progress_activity_end(progress.env$activity)
+      progress.env$activity <- NULL
+    }
+    invisible(NULL)
+  }
+
+  progress_end <- function(detail = NULL) {
+    if (!is.null(progress.env$state)) {
+      .crs_progress_end(progress.env$state, detail = detail)
+      progress.env$state <- NULL
+    }
+    progress_note_end()
+    invisible(NULL)
+  }
+
+  on.exit({
+    progress_end()
+  }, add = TRUE)
+
   if(!NOMAD) {
 
     ## We set some initial parameters that are placeholders to get
     ## things rolling.
-    
+
     d.opt <- Inf
     s.opt <- Inf
     par.opt <- Inf
     value.opt <- -Inf
     length.x <- length(x)
     length.xnorm <- length(xnorm)
-    
+
     ## Loop through all degrees for every segment starting at
     ## segments.min.
-    
+
     d <- degree.min
-    
+
     while(d <= degree.max) {
-      
+
       ## For smooth densities one can simply restrict degree to at least
       ## 2 (or 3 to be consistent with cubic splines)
-      
+
       s <- segments.min
-      
+
       while(s <= segments.max) {
 
-        if(options('crs.messages')$crs.messages) {
-            if(verbose) cat("\n")
-            cat("\r                                                                                                  ")
-            cat("\rOptimizing, degree = ",d,", segments = ",s,", degree.opt = ",d.opt, ", segments.opt = ",s.opt," ",sep="")
-        }
-        
+        progress_step(
+          detail = paste0(
+            "degree=", d,
+            ", segments=", s,
+            ", best degree=", d.opt,
+            ", best segments=", s.opt
+          )
+        )
+
         ## Generate objects that need not be recomputed for a given d
         ## and s
-        
+
         Pnorm <- density.basis(x=x,
                                xnorm=xnorm,
                                degree=d,
                                segments=s,
                                basis=basis,
                                knots=knots,
-                               monotone=monotone)
-        
-        P <- Pnorm[rank.xnorm,][1:length.x,]
+                               monotone=monotone,
+                               display.warnings=display.warnings)
+
+        P <- Pnorm[rank.xnorm,][seq_len(length.x),]
         colSumsP <- colSums(P)
-        Pint <- Pnorm[rank.xnorm,][(length.x+1):nrow(Pnorm),]
-        xint <- xnorm[rank.xnorm][(length.x+1):nrow(Pnorm)]
-        
+        int.idx <- .crs_tail_index(length.x + 1L, nrow(Pnorm))
+        Pint <- Pnorm[rank.xnorm,][int.idx,]
+        xint <- xnorm[rank.xnorm][int.idx]
+
         complexity <- d+s
-        
+
         ## Multistart if desired.
-        
-        for(n in 1:nmulti) {
-          
+
+        for(n in seq_len(nmulti)) {
+
           ## Can restart to see if we can improve on min... note initial
           ## values totally ad-hoc...
-          
+
           par.init.out <- par.init(d,s,monotone,monotone.lb)
           par.init <- par.init.out$par.init
           par.upper <- par.init.out$par.upper
           par.lower <- par.init.out$par.lower
-          
+
           ## Trap non-convergence, restart from different initial
           ## points, display message if needed (trace>0 up to 6 provides
           ## ever more detailed information for L-BFGS-B)
-          
+
           optim.out <- list()
           optim.out[[4]] <- 9999
           optim.out$value <- -Inf
-          
+
           m.attempts <- 0
-          
+
           while(tryCatch(suppressWarnings(optim.out <- optim(par=par.init,
                                                              fn=sum.log.density,
                                                              gr=if(do.gradient){sum.log.density.gradient}else{NULL},
@@ -634,58 +720,58 @@ ls.ml <- function(x=NULL,
                                                              complexity=complexity,
                                                              control=list(fnscale=-1,maxit=maxit,if(verbose){trace=1}else{trace=0}))),
                          error = function(e){return(optim.out)})[[4]]!=0 && m.attempts < max.attempts){
-            
+
             ## If optim fails to converge, reset initial parameters and
             ## try again.
-            
-            if(options('crs.messages')$crs.messages) {
-                if(verbose && optim.out[[4]]!=0) {
-                    if(!is.null(optim.out$message)) cat("\n optim message = ",optim.out$message,sep="")
-                    cat("\n optim failed (degree = ",d,", segments = ",s,", convergence = ", optim.out[[4]],") re-running with new initial values",sep="")
-                }
+
+            if(isTRUE(getOption("crs.messages"))) {
+              if(verbose && optim.out[[4]]!=0) {
+                if(!is.null(optim.out$message)) .crs_message("optim message = ", optim.out$message)
+                .crs_message("optim failed (degree = ", d, ", segments = ", s, ", convergence = ", optim.out[[4]], ") re-running with new initial values")
+              }
             }
-            
+
             par.init.out <- par.init(d,s,monotone,monotone.lb)
             par.init <- par.init.out$par.init
             par.upper <- par.init.out$par.upper
             par.lower <- par.init.out$par.lower
-            
+
             m.attempts <- m.attempts+1
-            
+
           }
-          
+
           ## Check for a new optimum, overwrite existing values with
           ## new values.
-          
+
           if(optim.out$value > value.opt) {
-            if(options('crs.messages')$crs.messages) {
-                if(verbose && n==1) cat("\n optim improved: d = ",d,", s = ",s,", old = ",formatC(value.opt,format="g",digits=6),", new = ",formatC(optim.out$value,format="g",digits=6),", diff = ",formatC(optim.out$value-value.opt,format="g",digits=6),sep="")
-            
-                if(verbose && n>1) cat("\n optim improved (ms ",n,"/",nmulti,"): d = ",d,", s = ",s,", old = ",formatC(value.opt,format="g",digits=6),", new = ",formatC(optim.out$value,format="g",digits=6),", diff = ",formatC(optim.out$value-value.opt,format="g",digits=6),sep="")
+            if(isTRUE(getOption("crs.messages"))) {
+              if(verbose && n==1) .crs_message("optim improved: d = ", d, ", s = ", s, ", old = ", formatC(value.opt,format="g",digits=6), ", new = ", formatC(optim.out$value,format="g",digits=6), ", diff = ", formatC(optim.out$value-value.opt,format="g",digits=6))
+
+              if(verbose && n>1) .crs_message("optim improved (ms ", n, "/", nmulti, "): d = ", d, ", s = ", s, ", old = ", formatC(value.opt,format="g",digits=6), ", new = ", formatC(optim.out$value,format="g",digits=6), ", diff = ", formatC(optim.out$value-value.opt,format="g",digits=6))
             }
-            
+
             par.opt <- optim.out$par
             d.opt <- d
             s.opt <- s
             value.opt <- optim.out$value
           }
-          
+
         }
-        
+
         if(!(segments.min==segments.max) && elastic.max && s.opt == segments.max) segments.max <- segments.max+elastic.diff
         if(!(segments.min==segments.max) && elastic.max && s.opt < segments.max+elastic.diff) segments.max <- s.opt+elastic.diff
-        
+
         s <- s+1
-        
+
       }
-      
+
       d <- d+1
-      
+
       if(!(degree.min==degree.max) && elastic.max && d.opt == degree.max) degree.max <- degree.max+elastic.diff
       if(!(degree.min==degree.max) && elastic.max && d.opt < degree.max+elastic.diff) degree.max <- d.opt+elastic.diff
-      
+
     }
-    
+
   } else {
 
     eval.f <- function(input, params) {
@@ -705,36 +791,40 @@ ls.ml <- function(x=NULL,
       maxit <- params$maxit
       max.attempts <- params$max.attempts
       verbose <- params$verbose
+      display.warnings <- params$display.warnings
+      progress.env <- params$progress.env
 
       length.x <- length(x)
       length.xnorm <- length(xnorm)
 
       d <- input[1]
       s <- input[2]
-      
+
       complexity <- d+s
-        
+
       Pnorm <- density.basis(x=x,
                              xnorm=xnorm,
                              degree=d,
                              segments=s,
                              basis=basis,
                              knots=knots,
-                             monotone=monotone)
-      
-      P <- Pnorm[rank.xnorm,][1:length.x,]
+                             monotone=monotone,
+                             display.warnings=display.warnings)
+
+      P <- Pnorm[rank.xnorm,][seq_len(length.x),]
       colSumsP <- colSums(P)
-      Pint <- Pnorm[rank.xnorm,][(length.x+1):nrow(Pnorm),]
-      xint <- xnorm[rank.xnorm][(length.x+1):nrow(Pnorm)]
-      
+      int.idx <- .crs_tail_index(length.x + 1L, nrow(Pnorm))
+      Pint <- Pnorm[rank.xnorm,][int.idx,]
+      xint <- xnorm[rank.xnorm][int.idx]
+
       ## NOMAD minimizes only
 
       optim.out <- list()
       optim.out[[4]] <- 9999
       optim.out$value <- -Inf
-      
+
       m.attempts <- 0
-          
+
       while(tryCatch(suppressWarnings(optim.out <- optim(par=par.init,
                                                          fn=sum.log.density,
                                                          gr=if(do.gradient){sum.log.density.gradient}else{NULL},
@@ -750,34 +840,47 @@ ls.ml <- function(x=NULL,
                                                          complexity=complexity,
                                                          control=list(fnscale=-1,maxit=maxit,if(verbose){trace=1}else{trace=0}))),
                      error = function(e){return(optim.out)})[[4]]!=0 && m.attempts < max.attempts){
-        
+
         ## If optim fails to converge, reset initial parameters and
         ## try again.
-        
+
         if(verbose && optim.out[[4]]!=0) {
-          if(options('crs.messages')$crs.messages) {
-              if(!is.null(optim.out$message)) cat("\n optim message = ",optim.out$message,sep="")
-              cat("\n optim failed (degree = ",d,", segments = ",s,", convergence = ", optim.out[[4]],") re-running with new initial values",sep="")
+          if(isTRUE(getOption("crs.messages"))) {
+            if(!is.null(optim.out$message)) .crs_message("optim message = ", optim.out$message)
+            .crs_message("optim failed (degree = ", d, ", segments = ", s, ", convergence = ", optim.out[[4]], ") re-running with new initial values")
           }
         }
-        
+
         par.init.out <- par.init(d,s,monotone,monotone.lb)
         par.init <- par.init.out$par.init
         par.upper <- par.init.out$par.upper
         par.lower <- par.init.out$par.lower
-        
+
         m.attempts <- m.attempts+1
-        
+
       }
 
-      if(options('crs.messages')$crs.messages) {
-          if(verbose) cat("\n")
-          cat("\r                                                                                                  ")
-          cat("\rOptimizing, degree = ",d,", segments = ",s,", log likelihood = ",optim.out$value,sep="")
+      if (isTRUE(progress.env$enabled)) {
+        progress.env$count <- progress.env$count + 1L
+        if (is.null(progress.env$state)) {
+          progress.env$state <- .crs_progress_begin(
+            progress.env$label,
+            surface = progress.env$surface
+          )
+        }
+        progress.env$state <- .crs_progress_step(
+          progress.env$state,
+          done = progress.env$count,
+          detail = paste0(
+            "degree=", d,
+            ", segments=", s,
+            ", log likelihood=", format(optim.out$value)
+          )
+        )
       }
 
       fv <- -optim.out$value
-      
+
     }
 
     ## Initial values
@@ -803,14 +906,18 @@ ls.ml <- function(x=NULL,
     params$x <- x
     params$xnorm <- xnorm
     params$knots <- knots
-    params$basis <- basis    
+    params$basis <- basis
     params$monotone <- monotone
     params$monotone.lb <- monotone.lb
     params$rank.xnorm <- rank.xnorm
     params$do.gradient <- do.gradient
     params$maxit <- maxit
     params$max.attempts <- max.attempts
-    params$verbose <- verbose            
+    params$verbose <- verbose
+    params$display.warnings <- display.warnings
+    params$progress.env <- progress.env
+
+    progress_note("Calling NOMAD (Nonsmooth Optimization by Mesh Adaptive Direct Search)")
 
     solution <- snomadr(eval.f=eval.f,
                         n=2,## number of variables
@@ -820,9 +927,11 @@ ls.ml <- function(x=NULL,
                         lb=lb,
                         ub=ub,
                         nmulti=nmulti,
-                        print.output=FALSE,
+                        display.nomad.progress=display.nomad.progress,
                         opts=opts,
                         params=params)
+
+    progress_note_end()
 
     value.opt <- solution$objective
 
@@ -830,36 +939,40 @@ ls.ml <- function(x=NULL,
     s <- solution$solution[2]
 
     ## Final call to optim to retrieve beta
-    
+
     length.x <- length(x)
     length.xnorm <- length(xnorm)
-    
+
     complexity <- d+s
-    
+
     par.init.out <- par.init(d,s,monotone,monotone.lb)
     par.init <- par.init.out$par.init
     par.upper <- par.init.out$par.upper
     par.lower <- par.init.out$par.lower
-    
+
     Pnorm <- density.basis(x=x,
                            xnorm=xnorm,
                            degree=d,
                            segments=s,
                            basis=basis,
                            knots=knots,
-                           monotone=monotone)
-    
-    P <- Pnorm[rank.xnorm,][1:length.x,]
+                           monotone=monotone,
+                           display.warnings=display.warnings)
+
+    P <- Pnorm[rank.xnorm,][seq_len(length.x),]
     colSumsP <- colSums(P)
-    Pint <- Pnorm[rank.xnorm,][(length.x+1):nrow(Pnorm),]
-    xint <- xnorm[rank.xnorm][(length.x+1):nrow(Pnorm)]
-    
+    int.idx <- .crs_tail_index(length.x + 1L, nrow(Pnorm))
+    Pint <- Pnorm[rank.xnorm,][int.idx,]
+    xint <- xnorm[rank.xnorm][int.idx]
+
     optim.out <- list()
     optim.out[[4]] <- 9999
     optim.out$value <- -Inf
-    
+
     m.attempts <- 0
-    
+
+    progress_note("Recovering optimal spline coefficients at NOMAD solution")
+
     while(tryCatch(suppressWarnings(optim.out <- optim(par=par.init,
                                                        fn=sum.log.density,
                                                        gr=if(do.gradient){sum.log.density.gradient}else{NULL},
@@ -875,45 +988,56 @@ ls.ml <- function(x=NULL,
                                                        complexity=complexity,
                                                        control=list(fnscale=-1,maxit=maxit,if(verbose){trace=1}else{trace=0}))),
                    error = function(e){return(optim.out)})[[4]]!=0 && m.attempts < max.attempts){
-      
+
       ## If optim fails to converge, reset initial parameters and
       ## try again.
-      
+
       if(verbose && optim.out[[4]]!=0) {
-        if(options('crs.messages')$crs.messages) {
-            if(!is.null(optim.out$message)) cat("\n optim message = ",optim.out$message,sep="")
-            cat("\n optim failed (degree = ",d,", segments = ",s,", convergence = ", optim.out[[4]],") re-running with new initial values",sep="")
+        if(isTRUE(getOption("crs.messages"))) {
+          if(!is.null(optim.out$message)) .crs_message("optim message = ", optim.out$message)
+          .crs_message("optim failed (degree = ", d, ", segments = ", s, ", convergence = ", optim.out[[4]], ") re-running with new initial values")
         }
       }
-      
+
       par.init.out <- par.init(d,s,monotone,monotone.lb)
       par.init <- par.init.out$par.init
       par.upper <- par.init.out$par.upper
       par.lower <- par.init.out$par.lower
-      
+
       m.attempts <- m.attempts+1
-      
+
     }
-    
+
+    progress_note_end()
+
     d.opt <- d
     s.opt <- s
     par.opt <- optim.out$par
     value.opt <- optim.out$value
-    
+
+    progress_end(
+      detail = paste0(
+        "best degree=", d.opt,
+        ", best segments=", s.opt,
+        ", log likelihood=", format(value.opt)
+      )
+    )
+
   }
-  
-  if(options('crs.messages')$crs.messages) {
-      cat("\r                                                                            ")
+
+  if(isTRUE(getOption("crs.messages"))) {
+    if(display.warnings) {
       if(!(degree.min==degree.max) && (d.opt==degree.max)) warning(paste(" optimal degree equals search maximum (", d.opt,"): rerun with larger degree.max",sep=""))
       if(!(segments.min==segments.max) && (s.opt==segments.max)) warning(paste(" optimal segment equals search maximum (", s.opt,"): rerun with larger segments.max",sep=""))
-      if(par.opt[1]>0|par.opt[length(par.opt)]>0) warning(" optim() delivered a positive weight for linear segment (supposed to be negative)")
+      if(par.opt[1] > 0 || par.opt[length(par.opt)] > 0) warning(" optim() delivered a positive weight for linear segment (supposed to be negative)")
       if(!monotone&&par.opt[1]<=monotone.lb) warning(paste(" optimal weight for left nonmonotone basis equals search minimum (",par.opt[1],"): rerun with smaller monotone.lb",sep=""))
       if(!monotone&&par.opt[length(par.opt)]<=monotone.lb) warning(paste(" optimal weight for right nonmonotone basis equals search minimum (",par.opt[length(par.opt)],"): rerun with smaller monotone.lb",sep=""))
+    }
   }
-  
+
   ## Restore seed
 
-  if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
+  .crs_restore_seed(seed.state)
 
   return(list(degree=d.opt,segments=s.opt,beta=par.opt,fv=value.opt))
 
@@ -938,7 +1062,7 @@ summary.clsd <- function(object,
 
 print.clsd <- function(x,...)
 {
-        summary.clsd(x)
+  summary.clsd(x)
 }
 
 plot.clsd <- function(x,
@@ -961,7 +1085,7 @@ plot.clsd <- function(x,
       if(missing(ylab)) ylab <- "Distribution"
       if(missing(ylim)) ylim <- c(0,1)
     }
-    if(!distribution&&!derivative) {
+    if(!distribution && !derivative) {
       y <- x$density[order.x]
       if(missing(ylab)) ylab <- "Density"
       if(missing(ylim)) ylim <- c(0,max(y))
@@ -977,17 +1101,17 @@ plot.clsd <- function(x,
     if(distribution){
       y <- x$distribution.er[order.xer]
       if(missing(ylab)) ylab <- "Distribution"
-      if(missing(ylim)) ylim <- c(0,1)      
+      if(missing(ylim)) ylim <- c(0,1)
     }
-    if(!distribution&&!derivative) {
+    if(!distribution && !derivative) {
       y <- x$density.er[order.xer]
       if(missing(ylab)) ylab <- "Density"
-      if(missing(ylim)) ylim <- c(0,max(y))      
+      if(missing(ylim)) ylim <- c(0,max(y))
     }
     if(derivative){
       y <- x$density.deriv.er[order.xer]
       if(missing(ylab)) ylab <- "Density Derivative"
-      if(missing(ylim)) ylim <- c(min(y),max(y))      
+      if(missing(ylim)) ylim <- c(min(y),max(y))
     }
     x <- x$xer[order.xer]
   }
@@ -1008,6 +1132,5 @@ coef.clsd <- function(object, ...) {
 }
 
 fitted.clsd <- function(object, ...){
- object$density
+  object$density
 }
-

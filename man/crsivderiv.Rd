@@ -1,5 +1,6 @@
 \name{crsivderiv}
 \alias{crsivderiv}
+\alias{crsivderiv.default}
 
 \title{
 Nonparametric Instrumental Derivatives
@@ -18,28 +19,32 @@ Nonparametric Instrumental Derivatives
 
 }
 \usage{
-crsivderiv(y,
+crsivderiv(y, \dots)
+
+\method{crsivderiv}{default}(y,
            z,
            w,
            x = NULL,
            zeval = NULL,
            weval = NULL,
            xeval = NULL,
-           iterate.max = 1000,
-           iterate.diff.tol = 1.0e-08,
            constant = 0.5,
-           penalize.iteration = TRUE,
-           start.from = c("Eyz","EEywz"),
-           starting.values = NULL,
-           stop.on.increase = TRUE,
-           smooth.residuals = TRUE,
+           display.nomad.progress = TRUE,
+           display.warnings = TRUE,
+           iterate.diff.tol = 1.0e-08,
+           iterate.max = 1000,
            opts = list("MAX_BB_EVAL"=10000,
                        "EPSILON"=.Machine$double.eps,
                        "INITIAL_MESH_SIZE"="r1.0e-01",
                        "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
-                       "MIN_POLL_SIZE"=paste("r",1,sep=""),
+                       "MIN_FRAME_SIZE"=paste("r",1,sep=""),
                        "DISPLAY_DEGREE"=0),
-           ...)
+           penalize.iteration = TRUE,
+           smooth.residuals = TRUE,
+           start.from = c("Eyz","EEywz"),
+           starting.values = NULL,
+           stop.on.increase = TRUE,
+           \dots)
 }
 
 \arguments{
@@ -50,9 +55,9 @@ crsivderiv(y,
   }
 
   \item{z}{
-    a \eqn{p}-variate data frame of endogenous predictors. The data
-    types may be continuous, discrete (unordered and ordered factors),
-    or some combination thereof
+    a one-column data frame of continuous endogenous predictors. The
+    current implementation of \code{crsivderiv} supports univariate
+    continuous \eqn{z} only
   }
   \item{w}{
     a \eqn{q}-variate data frame of instruments. The data types may be
@@ -65,9 +70,9 @@ crsivderiv(y,
     or some combination thereof
   }
   \item{zeval}{
-    a \eqn{p}-variate data frame of endogenous predictors on which the
-    regression will be estimated (evaluation data). By default, evaluation
-    takes place on the data provided by \code{z}
+    a one-column data frame of continuous endogenous predictors on
+    which the regression will be estimated (evaluation data). By
+    default, evaluation takes place on the data provided by \code{z}
   }
   \item{weval}{
     a \eqn{q}-variate data frame of instruments on which the regression
@@ -79,22 +84,36 @@ crsivderiv(y,
     regression will be estimated (evaluation data). By default,
     evaluation takes place on the data provided by \code{x}
   }
-\item{iterate.max}{
-  an integer indicating the maximum number of iterations permitted
-  before termination occurs when using Landweber-Fridman iteration
+\item{constant}{
+  the constant to use when using  Landweber-Fridman iteration
 }
+\item{display.nomad.progress}{ a logical value indicating whether to
+  display the progress of the NOMAD solver (default \code{display.nomad.progress=TRUE}) }
+\item{display.warnings}{ a logical value indicating whether to
+  display warnings (default \code{display.warnings=TRUE}) }
 \item{iterate.diff.tol}{
   the search tolerance for the difference in the stopping rule from
   iteration to iteration when using Landweber-Fridman
   (disable by setting to zero)
 }
-\item{constant}{
-  the constant to use when using  Landweber-Fridman iteration
+\item{iterate.max}{
+  an integer indicating the maximum number of iterations permitted
+  before termination occurs when using Landweber-Fridman iteration
+}
+\item{opts}{
+  arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+  further details)
 }
 \item{penalize.iteration}{ a logical value indicating whether to
     penalize the norm by the number of iterations or not (default
     \code{TRUE})
 }    
+\item{smooth.residuals}{
+  a logical value (defaults to \code{TRUE}) indicating whether to
+  optimize bandwidths for the regression of \eqn{y-\varphi(z)}{y-phi(z)}
+  on \eqn{w} or for the regression of \eqn{\varphi(z)}{phi(z)} on
+  \eqn{w} during iteration
+ }
 \item{start.from}{ a character string indicating whether to start from
   \eqn{E(Y|z)} (default, \code{"Eyz"}) or from \eqn{E(E(Y|z)|z)} (this can
   be overridden by providing \code{starting.values} below)
@@ -111,16 +130,6 @@ crsivderiv(y,
   course of one iteration (i.e. it may be above the iteration tolerance
   but increased)
 }
-\item{smooth.residuals}{
-  a logical value (defaults to \code{TRUE}) indicating whether to
-  optimize bandwidths for the regression of \eqn{y-\varphi(z)}{y-phi(z)}
-  on \eqn{w} or for the regression of \eqn{\varphi(z)}{phi(z)} on
-  \eqn{w} during iteration
- }
-\item{opts}{
-  arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
-  further details)
-}
 \item{...}{
   additional arguments supplied to \code{\link{crs}}
 }
@@ -135,6 +144,21 @@ crsivderiv(y,
   number than the default \code{nmulti=5} for \code{\link{crs}} when
   using \code{cv="nomad"} or instead use \code{cv="exhaustive"} if
   possible (this may not be feasible for non-trivial problems).
+
+  Note that for subsequent Landweber-Fridman iterations, a \dQuote{warm
+  start} strategy is employed. The optimal parameters (spline degree,
+  number of segments, and bandwidths or inclusion indicators) from the
+  previous iteration are used as starting values for the current
+  iteration. The user-supplied \code{nmulti} is respected for all
+  iterations. For iterations after the first successful one, these
+  optimal parameters serve as the first of the multiple initial points
+  (a warm start), while any remaining restarts are cold starts. If
+  \code{nmulti} is not explicitly supplied by the user, it defaults to
+  the \code{\link{crs}} default (5) for the first iteration and to 1 for
+  all subsequent iterations. This strategy provides a balance between
+  computational efficiency and robustness, allowing the NOMAD solver to
+  refine the structural parameters as the residuals evolve
+  incrementally while still guarding against local optima.
 
   When using Landweber-Fridman iteration, iteration will terminate
   when either the change in the value of
@@ -152,12 +176,33 @@ crsivderiv(y,
   guarantee an exact solution for each iteration (i.e. there will be no
   errors arising due to numerical search).
 
+  The current implementation supports a single continuous endogenous
+  regressor only. Instrument and exogenous regressor data may still be
+  mixed continuous and categorical.
+
 }
 \value{
   
-  \code{crsivderiv} returns components \code{phi.prime}, \code{phi},
-    \code{phi.prime.mat}, \code{num.iterations}, \code{norm.stop},
-    \code{norm.value} and \code{convergence}.
+  \code{crsivderiv} returns a \code{crsivderiv} object (which inherits
+    from the \code{\link{crs}} class).  The generic functions
+    \code{\link{print}}, \code{\link{summary}}, \code{\link{fitted}},
+    \code{\link{residuals}}, \code{\link{predict}}, and
+    \code{\link{plot}} support objects of this type.
+
+    For the \code{\link{plot}} function, the options are
+    \code{plot.data=FALSE} (a logical value indicating whether to plot
+    the data as a scatter plot) and \code{phi=FALSE} (a logical value
+    indicating whether to plot the reconstructed structural function
+    rather than its derivative). Note that the \code{\link{plot}}
+    method for \code{crsivderiv} objects currently only supports a
+    univariate continuous endogenous predictor \eqn{z}.
+    
+    See \code{\link{crs}} for details on the return object components.
+
+    In addition to the standard \code{\link{crs}} components,
+    \code{crsivderiv} returns components \code{phi.prime}, \code{phi},
+    \code{phi.prime.mat}, \code{phi.mat}, \code{num.iterations},
+    \code{norm.stop}, \code{norm.value} and \code{convergence}.
     
 }
   
@@ -205,7 +250,7 @@ further notice.
 }
 
 \seealso{
-\code{\link[np]{npreg}}, \code{\link{crsiv}}, \code{\link{crs}}
+\code{npreg}, \code{\link{crsiv}}, \code{\link{crs}}
 }
 \examples{
 \dontrun{
@@ -264,7 +309,11 @@ ivdata <- ivdata[order(ivdata$z),]
 rm(y,z,w,u,v)
 attach(ivdata)
 
-model.ivderiv <- crsivderiv(y=y,z=z,w=w)
+## Setting cv.threshold = 0 forces NOMAD search instead of exhaustive search
+## when no categorical predictors are present. This avoids unnecessary
+## evaluation of all degree/segment combinations in the examples and, for
+## crsiv() and crsivderiv(), ensures that the warm-start strategy is used.
+model.ivderiv <- crsivderiv(y=y,z=z,w=w,cv.threshold=0)
 
 ylim <-c(quantile(model.ivderiv$phi.prime,trim),
          quantile(model.ivderiv$phi.prime,1-trim))

@@ -12,7 +12,7 @@
 #    eval.f : function to evaluate objective function
 #    lb : lower bounds of the control
 #    ub : upper bounds of the control
-#    opts : list with options that are passed to Ipopt
+#    opts : list with options that are passed to NOMAD
 #       ... : arguments that will be passed to user-defined functions
 #
 # Output: structure with inputs and
@@ -34,47 +34,277 @@
 #
 # This program is distributed WITHOUT ANY WARRANTY. See the
 # GNU General Public License for more details.
-#  
+#
 # If you do not have a copy of the GNU General Public License,
 # write to the Free Software Foundation, Inc.,
 # 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-snomadr <-
-function( eval.f,
-          n,
-          bbin = NULL,
-          bbout = NULL,
-          x0 = NULL,
-          lb = NULL,
-          ub = NULL,
-          nmulti = 0,   #0: call single nomad,
-          random.seed = 0,  # seed will be used for generating multiple initial points.
-          opts = list(),
-          print.output = TRUE,  #0: if it is FALSE,  there will be no output in snomadr, if DISPLAY_DEGREE=0 and print_output is true, there will be no any output.
-          information = list(),
-          snomadr.environment = new.env(),
-          ... ) {
+nomad4.mads.defaults <- function() {
+  # Default MADS profile using NOMAD4 option names only.
+  # User-supplied opts always take precedence.
+  list(
+    "QUAD_MODEL_SEARCH" = "yes",
+    "SGTELIB_MODEL_SEARCH" = "no",
+    "NM_SEARCH" = "yes",
+    "SPECULATIVE_SEARCH" = "yes",
+    "EVAL_OPPORTUNISTIC" = "yes",
+    "EVAL_QUEUE_SORT" = "QUADRATIC_MODEL",
+    "DIRECTION_TYPE" = "ORTHO N+1 QUAD",
+    # Tuned default for quad-model search box factor.
+    "QUAD_MODEL_SEARCH_BOX_FACTOR" = "2.0",
+    "QUAD_MODEL_BOX_FACTOR" = "2.0"
+  )
+}
 
-  ## Save seed prior to setting
-
-  if(exists(".Random.seed", .GlobalEnv)) {
-    save.seed <- get(".Random.seed", .GlobalEnv)
-    exists.seed = TRUE
-  } else {
-    exists.seed = FALSE
+merge.nomad4.mads.defaults <- function(opts) {
+  defaults <- nomad4.mads.defaults()
+  if (length(opts) == 0) {
+    return(defaults)
   }
+  for (k in names(defaults)) {
+    if (is.null(opts[[k]])) {
+      opts[[k]] <- defaults[[k]]
+    }
+  }
+  opts
+}
 
-  set.seed(random.seed)
+nomad4.fr.defaults <- function() {
+  # Path-specific defaults for frscvNOMAD.
+  # Empirically reduces runtime while preserving objective parity.
+  list(
+    "QUAD_MODEL_SEARCH" = "no",
+    "EVAL_QUEUE_SORT" = "DIR_LAST_SUCCESS",
+    "SIMPLE_LINE_SEARCH" = "yes",
+    "SPECULATIVE_SEARCH" = "no",
+    "DIRECTION_TYPE" = "ORTHO N+1 NEG"
+  )
+}
 
-  if(length(information) > 0) {
-    sinfo <- NULL
-    sversion <- NULL
-    shelp <- NULL
-    if(!is.null(information$info)) sinfo <-information$info
-    if(!is.null(information$version)) sversion <- information$version
-    if(!is.null(information$help)) shelp <- information$help
+merge.nomad4.fr.defaults <- function(opts) {
+  defaults <- nomad4.fr.defaults()
+  if (length(opts) == 0) {
+    return(defaults)
+  }
+  for (k in names(defaults)) {
+    if (is.null(opts[[k]])) {
+      opts[[k]] <- defaults[[k]]
+    }
+  }
+  opts
+}
 
-    ret <- list( info=sinfo, version=sversion, help=shelp, snomadr.environment)
+nomad4.kr.defaults <- function() {
+  # Path-specific defaults for krscvNOMAD.
+  # Aggressive speed-oriented defaults.
+  list(
+    "QUAD_MODEL_SEARCH" = "no",
+    "EVAL_QUEUE_SORT" = "DIR_LAST_SUCCESS",
+    "DIRECTION_TYPE" = "ORTHO 2N"
+  )
+}
+
+merge.nomad4.kr.defaults <- function(opts) {
+  defaults <- nomad4.kr.defaults()
+  if (length(opts) == 0) {
+    return(defaults)
+  }
+  for (k in names(defaults)) {
+    if (is.null(opts[[k]])) {
+      opts[[k]] <- defaults[[k]]
+    }
+  }
+  opts
+}
+
+snomadr <-
+  function( eval.f,
+            n,
+            bbin = NULL,
+            bbout = NULL,
+            x0 = NULL,
+            lb = NULL,
+            ub = NULL,
+            nmulti = 0,   #0: call single nomad,
+            random.seed = 0,  # seed will be used for generating multiple initial points.
+            opts = list(),
+            display.nomad.progress = TRUE,  #0: if it is FALSE,  there will be no output in snomadr, if DISPLAY_DEGREE=0 and print_output is true, there will be no any output.
+            information = list(),
+            snomadr.environment = new.env(),
+            ... ) {
+
+    ## Save seed prior to setting
+
+    seed.state <- .crs_capture_seed()
+
+    set.seed(random.seed)
+
+    if(length(information) > 0) {
+      sinfo <- NULL
+      sversion <- NULL
+      shelp <- NULL
+      if(!is.null(information$info)) sinfo <-information$info
+      if(!is.null(information$version)) sversion <- information$version
+      if(!is.null(information$help)) shelp <- information$help
+
+      ret <- list( info=sinfo, version=sversion, help=shelp, snomadr.environment)
+
+      attr(ret, "class") <- "snomadr"
+
+      ## Add the current call to the list
+      ret$call <- match.call()
+
+      ## Pass snomadr object to C code
+      solution <- .Call( snomadRInfo, ret )
+      ## Remove the environment from the return object
+      ret$environment <- NULL
+      ## We have not implemented the following output from snomadRInfo
+      ##ret$Info<-solution$Info
+      ##ret$Version<-solution$Version
+      ##ret$Help<-solution$Help
+
+      return(ret)
+
+    }
+
+    information <- NULL  ## We will check whether it is NULL in print.snomadr.
+
+    ## The number of variables should not be null.
+    if (missing(n ) || missing(eval.f)) stop("Must provide the objective function and the number of variables")
+    if(missing(nmulti)||nmulti < 0) nmulti <- 0
+    if(missing(display.nomad.progress)) display.nomad.progress <- TRUE
+    opts <- merge.nomad4.mads.defaults(opts)
+
+    ## Define 'continuous' to types of variables
+    if (is.null(bbin) ) { bbin <- rep (0, n)}
+    ## Define 'NOMAD::OBJ' to the output type of the function
+    if (is.null(bbout)) {bbout <- rep(0, 1)}
+
+    ## Define 'infinite' lower and upper bounds of the control if they haven't been set
+    if ( is.null( lb ) ) { lb <- rep( -Inf, n ) }
+    if ( is.null( ub ) ) { ub <- rep(  Inf, n ) }
+
+    ## We don't need to generate the initial point for multiple mads runs.
+    if(is.null(x0)&&nmulti < 1){
+      x0<-rep(0.0, n)
+      for(i in seq_len(n)){
+        x0[i] <- runif(1, min=lb[i], max=ub[i])
+      }
+    }
+
+    ## Change the environment of the functions that we're calling the
+    ## environment of the eval.f is changed below (if it exists)
+    environment( eval.f ) <- snomadr.environment
+
+    ## Internal function to check the arguments of the functions
+    checkFunctionArguments <- function( fun, arglist, funname ) {
+      if (!is.function(fun)) stop(paste(funname, " must be a function\n", sep = ""))
+
+      fargs <- formals(fun)
+      if (length(fargs) <= 1L) {
+        if (length(arglist) > 0L) {
+          argnames.supplied <- names(arglist)
+          if (is.null(argnames.supplied)) {
+            argnames.supplied <- rep.int("", length(arglist))
+          }
+          bad.idx <- 1L
+          bad.name <- if (nzchar(argnames.supplied[bad.idx])) {
+            argnames.supplied[bad.idx]
+          } else {
+            paste0("argument #", bad.idx)
+          }
+          stop(paste("'", bad.name, "' passed to (...) in 'snomadr' but this is not required in the ", funname, " function.\n", sep = ""))
+        }
+        return(0)
+      }
+
+      is_missing_default <- function(x) identical(x, quote(expr = ))
+
+      extra_formals <- fargs[-1L]
+      extra_names <- names(extra_formals)
+      has_dots <- any(extra_names == "...")
+      formal_names <- extra_names[extra_names != "..."]
+
+      argnames.supplied <- names(arglist)
+      if (is.null(argnames.supplied)) {
+        argnames.supplied <- rep.int("", length(arglist))
+      }
+
+      named_idx <- which(nzchar(argnames.supplied))
+      unnamed_idx <- which(!nzchar(argnames.supplied))
+      named_args <- argnames.supplied[named_idx]
+
+      supplied_by_name <- rep.int(FALSE, length(formal_names))
+      names(supplied_by_name) <- formal_names
+
+      if (length(named_args) > 0L) {
+        bad_named <- named_args[is.na(match(named_args, formal_names))]
+        if (!has_dots && length(bad_named) > 0L) {
+          stop(paste("'", bad_named[1L], "' passed to (...) in 'snomadr' but this is not required in the ", funname, " function.\n", sep = ""))
+        }
+        valid_named <- named_args[!is.na(match(named_args, formal_names))]
+        if (length(valid_named) > 0L) {
+          supplied_by_name[unique(valid_named)] <- TRUE
+        }
+      }
+
+      unmatched_formals <- formal_names[!supplied_by_name]
+      n_unnamed <- length(unnamed_idx)
+      n_positional_match <- min(length(unmatched_formals), n_unnamed)
+      supplied_positional <- character(0L)
+      if (n_positional_match > 0L) {
+        supplied_positional <- unmatched_formals[seq_len(n_positional_match)]
+      }
+
+      if (!has_dots && n_unnamed > n_positional_match) {
+        bad_pos <- unnamed_idx[n_positional_match + 1L]
+        stop(paste("'", paste0("argument #", bad_pos), "' passed to (...) in 'snomadr' but this is not required in the ", funname, " function.\n", sep = ""))
+      }
+
+      supplied_all <- rep.int(FALSE, length(formal_names))
+      names(supplied_all) <- formal_names
+      if (any(supplied_by_name)) {
+        supplied_all[names(supplied_by_name)[supplied_by_name]] <- TRUE
+      }
+      if (length(supplied_positional) > 0L) {
+        supplied_all[supplied_positional] <- TRUE
+      }
+
+      required_formals <- extra_names[
+        extra_names != "..." & vapply(extra_formals[extra_names != "..."], is_missing_default, logical(1L))
+      ]
+      missing_required <- required_formals[!supplied_all[required_formals]]
+      if (length(missing_required) > 0L) {
+        stop(paste(funname, " requires argument '", missing_required[1L], "' but this has not been passed to the 'snomadr' function.\n", sep = ""))
+      }
+
+      return(0)
+    }
+
+    ## Extract list of additional arguments and check user-defined
+    ## functions There is an error when building the package crs, so
+    ## Zhenghua commented the the following two lines.
+
+    arglist <- list(...)
+    checkFunctionArguments( eval.f, arglist, 'eval.f' )
+
+    ## Write wrappers around user-defined functions to pass additional
+    ## arguments
+    eval.f.wrapper <- function(x){ eval.f(x,...) }
+
+    ## Build snomadr object
+    ret <- list("eval.f"=eval.f.wrapper,
+                "n"=as.integer(n),
+                "bbin"=as.integer(bbin),
+                "bbout"=as.integer(bbout),
+                "x0"=x0,
+                "lower.bounds"=lb,
+                "upper.bounds"=ub,
+                "nmulti"=as.integer(nmulti),
+                "random.seed"=as.integer(random.seed),
+                "options"=get.option.types(opts),
+                "print.output"=display.nomad.progress,
+                "snomadr.environment"=snomadr.environment)
 
     attr(ret, "class") <- "snomadr"
 
@@ -82,133 +312,27 @@ function( eval.f,
     ret$call <- match.call()
 
     ## Pass snomadr object to C code
-    solution <- .Call( snomadRInfo, ret )
+    if(nmulti == 0){
+      solution <- .Call( snomadRSolve, ret )
+    } else {
+      solution <- .Call( smultinomadRSolve, ret )
+    }
+
     ## Remove the environment from the return object
     ret$environment <- NULL
-    ## We have not implemented the following output from snomadRInfo
-    ##ret$Info<-solution$Info
-    ##ret$Version<-solution$Version
-    ##ret$Help<-solution$Help
 
-    return(ret)
+    ## Add solution variables to object
+    ret$status <- solution$status
+    ret$message <- solution$message
+    ret$bbe <- solution$bbe
+    ret$iterations <- solution$iterations
+    ret$objective <- solution$objective
+    ret$solution <- solution$solution
+
+    ## Restore seed
+
+    .crs_restore_seed(seed.state)
+
+    return( ret )
 
   }
-
-  information <- NULL  ## We will check whether it is NULL in print.snomadr.
-
-  ## The number of variables should not be null.
-  if (missing(n ) || missing(eval.f)) stop("Must provide the objective function and the number of variables")
-  if(missing(nmulti)||nmulti < 0) nmulti <- 0
-  if(missing(print.output)) print.output <- TRUE
-
-  ## Define 'continuous' to types of variables
-  if (is.null(bbin) ) { bbin <- rep (0, n)}
-  ## Define 'NOMAD::OBJ' to the output type of the function
-  if (is.null(bbout)) {bbout <- rep(0, 1)}
-
-  ## Define 'infinite' lower and upper bounds of the control if they haven't been set
-  if ( is.null( lb ) ) { lb <- rep( -Inf, n ) }
-  if ( is.null( ub ) ) { ub <- rep(  Inf, n ) }
-
-  ## We don't need to generate the initial point for multiple mads runs.
-  if(is.null(x0)&&nmulti < 1){
-    x0<-rep(0.0, n)
-    for(i in 1:n){
-      x0[i] <- runif(1, min=lb[i], max=ub[i])
-    }
-  }
-
-  ## Change the environment of the functions that we're calling the
-  ## environment of the eval.f is changed below (if it exists)
-  environment( eval.f ) <- snomadr.environment
-
-  ## Internal function to check the arguments of the functions
-  checkFunctionArguments <- function( fun, arglist, funname ) {
-    if( !is.function(fun) ) stop(paste(funname, " must be a function\n", sep = ""))
-
-    ## Determine function arguments
-    fargs <- formals(fun)
-
-    if ( length(fargs) > 1 ) {
-      ## Determine argument names user-defined function
-      argnames.udf <- names(fargs)[2:length(fargs)]  ## remove first argument, which is x
-
-      ## Determine argument names that where supplied to snomadr()
-      argnames.supplied <- names(arglist)
-
-      ## Determine which arguments where required but not supplied
-      m1 = match(argnames.udf, argnames.supplied)
-      if( any(is.na(m1)) ){
-        mx1 = which( is.na(m1) )
-        for( i in 1:length(mx1) ){
-          stop(paste(funname, " requires argument '", argnames.udf[mx1], "' but this has not been passed to the 'snomadr' function.\n", sep = ""))
-        }
-      }
-
-      ## Determine which arguments where supplied but not required
-      m2 = match(argnames.supplied, argnames.udf)
-      if( any(is.na(m2)) ){
-        mx2 = which( is.na(m2) )
-        for( i in 1:length(mx2) ){
-          stop(paste("'", argnames.supplied[mx2], "' passed to (...) in 'snomadr' but this is not required in the ", funname, " function.\n", sep = ""))
-        }
-      }
-    }
-    return( 0 )
-  }
-
-  ## Extract list of additional arguments and check user-defined
-  ## functions There is an error when building the package crs, so
-  ## Zhenghua commented the the following two lines.
-
-  arglist <- list(...)
-  checkFunctionArguments( eval.f, arglist, 'eval.f' )
-
-  ## Write wrappers around user-defined functions to pass additional
-  ## arguments
-  eval.f.wrapper <- function(x){ eval.f(x,...) }
-
-  ## Build snomadr object
-  ret <- list("eval.f"=eval.f.wrapper,
-              "n"=as.integer(n),
-              "bbin"=as.integer(bbin),
-              "bbout"=as.integer(bbout),
-              "x0"=x0,
-              "lower.bounds"=lb,
-              "upper.bounds"=ub,
-              "nmulti"=as.integer(nmulti),
-              "random.seed"=as.integer(random.seed),
-              "options"=get.option.types(opts),
-              "print.output"=print.output,
-              "snomadr.environment"=snomadr.environment)
-
-  attr(ret, "class") <- "snomadr"
-
-  ## Add the current call to the list
-  ret$call <- match.call()
-
-  ## Pass snomadr object to C code
-  if(nmulti == 0){
-    solution <- .Call( snomadRSolve, ret )
-  } else {
-    solution <- .Call( smultinomadRSolve, ret )
-  }
-
-  ## Remove the environment from the return object
-  ret$environment <- NULL
-
-  ## Add solution variables to object
-  ret$status <- solution$status
-  ret$message <- solution$message
-  ret$bbe <- solution$bbe
-  ret$iterations <- solution$iterations
-  ret$objective <- solution$objective
-  ret$solution <- solution$solution
-
-  ## Restore seed
-
-  if(exists.seed) assign(".Random.seed", save.seed, .GlobalEnv)
-
-  return( ret )
-
-}

@@ -1,5 +1,6 @@
 \name{crsiv}
 \alias{crsiv}
+\alias{crsiv.default}
 
 \title{
 Nonparametric Instrumental Regression
@@ -21,7 +22,9 @@ Horowitz (2011) using the regression spline methodology implemented in
 the \pkg{crs} package.
 }
 \usage{
-crsiv(y,
+crsiv(y, \dots)
+
+\method{crsiv}{default}(y,
       z,
       w,
       x = NULL,
@@ -29,26 +32,28 @@ crsiv(y,
       weval = NULL,
       xeval = NULL,
       alpha = NULL,
-      alpha.min = 1e-10,
       alpha.max = 1e-01,
+      alpha.min = 1e-10,
       alpha.tol = .Machine$double.eps^0.25,
-      deriv = 0,
-      iterate.max = 1000,
-      iterate.diff.tol = 1.0e-08,
       constant = 0.5,
-      penalize.iteration = TRUE,
-      smooth.residuals = TRUE,
-      start.from = c("Eyz","EEywz"),
-      starting.values = NULL,
-      stop.on.increase = TRUE,
+      deriv = 0,
+      display.nomad.progress = TRUE,
+      display.warnings = TRUE,
+      iterate.diff.tol = 1.0e-08,
+      iterate.max = 1000,
       method = c("Landweber-Fridman","Tikhonov"),
       opts = list("MAX_BB_EVAL"=10000,
                   "EPSILON"=.Machine$double.eps,
                   "INITIAL_MESH_SIZE"="r1.0e-01",
                   "MIN_MESH_SIZE"=paste("r",sqrt(.Machine$double.eps),sep=""),
-                  "MIN_POLL_SIZE"=paste("r",1,sep=""),
+                  "MIN_FRAME_SIZE"=paste("r",1,sep=""),
                   "DISPLAY_DEGREE"=0),
-      ...)
+      penalize.iteration = TRUE,
+      smooth.residuals = TRUE,
+      start.from = c("Eyz","EEywz"),
+      starting.values = NULL,
+      stop.on.increase = TRUE,
+      \dots)
 }
 
 \arguments{
@@ -92,36 +97,52 @@ crsiv(y,
     a numeric scalar that, if supplied, is used rather than numerically
     solving for \code{alpha}, when using \code{method="Tikhonov"}
     }
-  \item{alpha.min}{
-    minimum of search range for \eqn{\alpha}{alpha}, the Tikhonov
-    regularization parameter, when using \code{method="Tikhonov"}
-}
   \item{alpha.max}{
     maximum of search range for \eqn{\alpha}{alpha}, the Tikhonov
     regularization parameter, when using  \code{method="Tikhonov"}
   }
+  \item{alpha.min}{
+    minimum of search range for \eqn{\alpha}{alpha}, the Tikhonov
+    regularization parameter, when using \code{method="Tikhonov"}
+}
 \item{alpha.tol}{
   the search tolerance for \code{optimize} when solving for
   \eqn{\alpha}{alpha}, the Tikhonov regularization parameter, 
   when using \code{method="Tikhonov"}
 }
-\item{iterate.max}{
-  an integer indicating the maximum number of iterations permitted
-  before termination occurs when using \code{method="Landweber-Fridman"}
+\item{constant}{
+  the constant to use when using  \code{method="Landweber-Fridman"}
 }
+  \item{deriv}{ an integer \code{l} (default \code{deriv=0}) specifying
+  whether to compute the univariate \code{l}th partial derivative for
+  each continuous predictor (and difference in levels for each
+  categorical predictor) or not and if so what order. Note that if
+  \code{deriv} is higher than the spline degree of the associated
+  continuous predictor then the derivative will be zero and a warning
+  issued to this effect (see important note below)
+  }
+  \item{display.nomad.progress}{ a logical value indicating whether to
+  display the progress of the NOMAD solver (default \code{display.nomad.progress=TRUE}) }
+  \item{display.warnings}{ a logical value indicating whether to
+  display warnings (default \code{display.warnings=TRUE}) }
 \item{iterate.diff.tol}{
   the search tolerance for the difference in the stopping rule from
   iteration to iteration when using \code{method="Landweber-Fridman"}
     (disable by setting to zero)
 }
-\item{constant}{
-  the constant to use when using  \code{method="Landweber-Fridman"}
+\item{iterate.max}{
+  an integer indicating the maximum number of iterations permitted
+  before termination occurs when using \code{method="Landweber-Fridman"}
 }
 \item{method}{
   the regularization method employed (default
    \code{"Landweber-Fridman"}, see Horowitz (2011); see Darolles, Fan,
    Florens and Renault (2011) for details for \code{"Tikhonov"})
  }
+  \item{opts}{
+    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
+    further details)
+  }
 \item{penalize.iteration}{ a logical value indicating whether to
     penalize the norm by the number of iterations or not (default
     \code{TRUE})
@@ -148,18 +169,6 @@ crsiv(y,
   course of one iteration (i.e. it may be above the iteration tolerance
   but increased)
 }
-  \item{opts}{
-    arguments passed to the NOMAD solver (see \code{\link{snomadr}} for
-    further details)
-  }
-  \item{deriv}{ an integer \code{l} (default \code{deriv=0}) specifying
-  whether to compute the univariate \code{l}th partial derivative for
-  each continuous predictor (and difference in levels for each
-  categorical predictor) or not and if so what order. Note that if
-  \code{deriv} is higher than the spline degree of the associated
-  continuous predictor then the derivative will be zero and a warning
-  issued to this effect (see important note below)
-  }
 \item{...}{
   additional arguments supplied to \code{\link{crs}}
 }
@@ -190,7 +199,22 @@ crsiv(y,
   this eventuality set \code{nmulti} to a larger number than the default
   \code{nmulti=5} for \code{\link{crs}} when using \code{cv="nomad"} or
   instead use \code{cv="exhaustive"} if possible (this may not be
-  feasible for non-trivial problems).
+  feasible for non-trivial problems). 
+
+  Note that for subsequent Landweber-Fridman iterations, a \dQuote{warm
+  start} strategy is employed. The optimal parameters (spline degree,
+  number of segments, and bandwidths or inclusion indicators) from the
+  previous iteration are used as starting values for the current
+  iteration. The user-supplied \code{nmulti} is respected for all
+  iterations. For iterations after the first successful one, these
+  optimal parameters serve as the first of the multiple initial points
+  (a warm start), while any remaining restarts are cold starts. If
+  \code{nmulti} is not explicitly supplied by the user, it defaults to
+  the \code{\link{crs}} default (5) for the first iteration and to 1 for
+  all subsequent iterations. This strategy provides a balance between
+  computational efficiency and robustness, allowing the NOMAD solver to
+  refine the structural parameters as the residuals evolve
+  incrementally while still guarding against local optima.
 
   When using \code{method="Landweber-Fridman"}, iteration will terminate
   when either the change in the value of
@@ -217,14 +241,22 @@ crsiv(y,
 }
 \value{
   
-  \code{crsiv} returns a \code{\link{crs}} object.  The generic
-    functions \code{\link{fitted}} and \code{\link{residuals}} extract
-    (or generate) estimated values and residuals. Furthermore, the
-    functions \code{\link{summary}}, \code{\link{predict}}, and
-    \code{\link{plot}} (options \code{mean=FALSE}, \code{deriv=i} where
-    \eqn{i} is an integer, \code{ci=FALSE},
-    \code{plot.behavior=c("plot","plot-data","data")}) support objects
-    of this type.
+  \code{crsiv} returns a \code{crsiv} object (which inherits from
+    the \code{\link{crs}} class).  The generic functions
+    \code{\link{print}}, \code{\link{summary}}, \code{\link{fitted}},
+    \code{\link{residuals}}, \code{\link{predict}}, and
+    \code{\link{plot}} support objects of this type.
+
+    For the \code{\link{plot}} function, the options include
+    \code{plot.data=FALSE} (a logical value indicating whether to plot
+    the data as a scatter plot), \code{deriv=FALSE} (a logical value
+    indicating whether to plot the derivative of the structural function
+    rather than the function itself), \code{ci=FALSE} (a logical value
+    indicating whether to overlay derivative confidence bounds when
+    available), and \code{xtrim=0.0} (a scalar in \code{[0,0.5)} used to
+    trim the plotted support of \eqn{z} by quantiles). Note that the
+    \code{\link{plot}} method for \code{crsiv} objects currently only
+    supports univariate endogenous predictors \eqn{z}.
     
     See \code{\link{crs}} for details on the return object components.
 
@@ -279,7 +311,7 @@ This function should be considered to be in \sQuote{beta test} status until furt
 }
 
 \seealso{
-\code{\link[np]{npreg}}, \code{\link{crs}}
+\code{npreg}, \code{\link{crs}}
 }
 \examples{
 \dontrun{
@@ -339,7 +371,11 @@ mean.noniv <- predict(model.noniv,newdata=evaldata)
 
 ## Compute the IV-regression spline estimator of phi(z)
 
-model.iv <- crsiv(y=y,z=z,w=w)
+## Setting cv.threshold = 0 forces NOMAD search instead of exhaustive search
+## when no categorical predictors are present. This avoids unnecessary
+## evaluation of all degree/segment combinations in the examples and, for
+## crsiv() and crsivderiv(), ensures that the warm-start strategy is used.
+model.iv <- crsiv(y=y,z=z,w=w,cv.threshold=0)
 phi.iv <- predict(model.iv,newdata=evaldata)
 
 ## For the plots, restrict focal attention to the bulk of the data

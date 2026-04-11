@@ -13,7 +13,7 @@ opts <- list("MAX_BB_EVAL"=10000,
              "EPSILON"=.Machine$double.eps,
              "INITIAL_MESH_SIZE"="r1.0e-01",
              "MIN_MESH_SIZE"=sqrt(.Machine$double.eps),
-             "MIN_POLL_SIZE"=sqrt(.Machine$double.eps),
+             "MIN_FRAME_SIZE"=sqrt(.Machine$double.eps),
              "DISPLAY_DEGREE"=0)
 
 set.seed(42)
@@ -49,9 +49,17 @@ y <- phi(z) + 0.05*x^3 + u
 ## In evaluation data sort z for plotting and hold x constant at its
 ## median
 
-model.iv <- crsiv(y=y,z=z,w=w,x=x,cv=cv,nmulti=nmulti,method=method,deriv=1)
+## Setting cv.threshold = 0 forces NOMAD search instead of exhaustive search
+## when no categorical predictors are present. This avoids unnecessary
+## evaluation of all degree/segment combinations in the examples and, for
+## crsiv() and crsivderiv(), ensures that the warm-start strategy is used.
+model.iv <- crsiv(y=y,z=z,w=w,x=x,cv=cv,nmulti=nmulti,method=method,deriv=1,cv.threshold=0)
 
-model.noniv <- crs(y~z+x,cv=cv,nmulti=nmulti,deriv=1,opts=opts)
+## Setting cv.threshold = 0 forces NOMAD search instead of exhaustive search
+## when no categorical predictors are present. This avoids unnecessary
+## evaluation of all degree/segment combinations in the examples and, for
+## crsiv() and crsivderiv(), ensures that the warm-start strategy is used.
+model.noniv <- crs(y~z+x,cv=cv,nmulti=nmulti,deriv=1,opts=opts,cv.threshold=0)
 
 summary(model.iv)
 
