@@ -1,5 +1,5 @@
-45e933336edbbeb80cc855ace868b252 *CHANGELOG
-798c72066614e8418646699ad15fee9d *DESCRIPTION
+86d8dbf9c7192bc7283115c0fc4f19b8 *CHANGELOG
+1885eacb667418c3052090bedcc1f815 *DESCRIPTION
 91c895497b842a4b8d14c6a543a6873f *NAMESPACE
 37ef27acbd80f95162759caa26b74ce2 *R/clsd.R
 039f06763d7609ccf8a9e49283e3a476 *R/crs.R
@@ -25,7 +25,7 @@ dca4a5d398ade269b2120da70f2fe24c *R/gsl_bspline.R
 3a6a0eadb0060868d05481a554b07519 *R/stepCV.R
 250135458bb87422d59c2a90b25daeb8 *R/util.R
 d3c208c66df6f3b76429612c2a8301af *R/zzz.R
-09e6dc90c6333a53c91302bbb27e5836 *README.md
+40795a09cb391fc658d0c82e4ec672f8 *README.md
 be9d03a6404b2ea8cb5c57543a4e29b3 *build/vignette.rds
 3e4cb7685204423be0c6f98f60261969 *cleanup
 6389d84d62cccc437d6f253a491f2b37 *data/Engel95.rda
@@ -50,7 +50,7 @@ f227980388a36f2312305a77d982a6ea *demo/radial_rgl.R
 5449fd27646fceaff1f05234cc567658 *inst/COPYRIGHTS
 3cf08dab4668ef152640efa85242e348 *inst/doc/crs_getting_started.R
 759fa2ae42ab4b062ddf3c713a17e4c8 *inst/doc/crs_getting_started.Rmd
-2c2f11aa445c717ad0499cb676f68fec *inst/doc/crs_getting_started.html
+df758be3d864458c89dbb253c204fc44 *inst/doc/crs_getting_started.html
 4c722006721b63ded3c039e9cbec1f27 *inst/nomad/NOMAD_4_5_0_OPTIONS_REFERENCE.md
 89b26fc862496e82b1342a67d9f387db *man/clsd.Rd
 7e276eca57e577f91fe0d6f90d22ff62 *man/crs-package.Rd
@@ -245,7 +245,7 @@ b7668660ab5eb7e17959e9b746c324aa *src/nomad4_src/src/Algos/Mads/SearchMethodBase
 6dba309669e8aae52f76c2b5e14032a8 *src/nomad4_src/src/Algos/Mads/SearchMethodBase.hpp
 a9f4f6fcb956ece9b597778292cadf86 *src/nomad4_src/src/Algos/Mads/SearchMethodSimple.cpp
 05b4e4224af4680d63cf8eca061a59ed *src/nomad4_src/src/Algos/Mads/SearchMethodSimple.hpp
-cada5aa40f05a01a416b5edd67ebb44f *src/nomad4_src/src/Algos/Mads/SgtelibSearchMethod.cpp
+3bc95924eee6a4bd3d4fc9aaa3ad12a3 *src/nomad4_src/src/Algos/Mads/SgtelibSearchMethod.cpp
 e5c301f3e9a849a02fe6435403d18130 *src/nomad4_src/src/Algos/Mads/SgtelibSearchMethod.hpp
 40084ba09290e648c37fa26ab05903fb *src/nomad4_src/src/Algos/Mads/SimpleLineSearchMethod.cpp
 64d68c44eca0f04ba53e27574d26f203 *src/nomad4_src/src/Algos/Mads/SimpleLineSearchMethod.hpp
@@ -470,7 +470,7 @@ cc82b8f107af539e6416f7f9fc14fc3c *src/nomad4_src/src/Eval/EvcMainThreadInfo.cpp
 b63d365e8ee0daee923fdeeacca449d5 *src/nomad4_src/src/Eval/EvcMainThreadInfo.hpp
 10964c89f23a5c07c4f965b1b710549f *src/nomad4_src/src/Eval/MeshBase.cpp
 f46ed455b4cd497787550b0ec91bdb64 *src/nomad4_src/src/Eval/MeshBase.hpp
-63786e1fe255eef04e91c34eea6de8fa *src/nomad4_src/src/Eval/ProgressiveBarrier.cpp
+2f67a1b0741a1d57483eef3a1d8ca4e6 *src/nomad4_src/src/Eval/ProgressiveBarrier.cpp
 d178e7b052b125983f809f79616b3c08 *src/nomad4_src/src/Eval/ProgressiveBarrier.hpp
 4d1ddc8095a645f2eedc1754db0474be *src/nomad4_src/src/Eval/SuccessStats.cpp
 6b2eaa2249ceb6bfe8309978219cd9a6 *src/nomad4_src/src/Eval/SuccessStats.hpp
@@ -587,7 +587,7 @@ f14ac52380ab9069307e134a2a726b13 *src/nomad4_src/src/nomad_nsbegin.hpp
 c269bafbf6d3f457ffe59e20e0fbbee1 *src/nomad4_src/src/nomad_nsend.hpp
 9110ce1cf66cddafe56d1c12aea6cfd9 *src/nomad4_src/src/nomad_platform.hpp
 a5d19c0e4e50700ee74cda8d387144c4 *src/nomad4_src/src/nomad_version.hpp
-1bb3427398d3398c17090c9263680842 *src/snomadr.cpp
+37e2393f075cbf83dfb50511402a913e *src/snomadr.cpp
 0c270dd392880d7a9b0bbbacd9396b93 *src/snomadr.h
 f6b5b1102f18014238b83d5f25269e77 *tools/nomad/generate_makevars_manifest.R
 7517ea34aa1819c0467ccda0d1109493 *tools/nomad/generate_nomad_options_reference.sh
