@@ -3,6 +3,7 @@
 #include <stdlib.h> // for NULL
 #include <R_ext/Rdynload.h>
 #include "mgcv.h"
+#include "../inst/include/crs_nomad_native.h"
 
 /* .C calls */
 extern void RuniqueCombs(void *, void *, void *, void *);
@@ -13,6 +14,7 @@ extern void gsl_bspline_deriv(void *, void *, void *, void *, void *, void *, vo
 extern SEXP smultinomadRSolve(SEXP);
 extern SEXP snomadRInfo(SEXP);
 extern SEXP snomadRSolve(SEXP);
+extern SEXP crs_nomad_native_test_solve(SEXP);
 extern SEXP crs_hat_diag(SEXP, SEXP, SEXP);
 extern SEXP crs_uniquecombs_call(SEXP);
 extern SEXP crs_gsl_bspline_call(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
@@ -31,6 +33,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"smultinomadRSolve", (DL_FUNC) &smultinomadRSolve, 1},
     {"snomadRInfo",       (DL_FUNC) &snomadRInfo,       1},
     {"snomadRSolve",      (DL_FUNC) &snomadRSolve,      1},
+    {"crs_nomad_native_test_solve", (DL_FUNC) &crs_nomad_native_test_solve, 1},
     {"crs_hat_diag",      (DL_FUNC) &crs_hat_diag,      3},
     {"crs_uniquecombs_call", (DL_FUNC) &crs_uniquecombs_call, 1},
     {"crs_gsl_bspline_call", (DL_FUNC) &crs_gsl_bspline_call, 6},
@@ -42,4 +45,6 @@ void R_init_crs(DllInfo *dll)
 {
     R_registerRoutines(dll, CEntries, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
+    R_RegisterCCallable("crs", "crs_nomad_solve",
+                        (DL_FUNC) crs_nomad_solve);
 }
