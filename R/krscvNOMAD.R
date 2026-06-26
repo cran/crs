@@ -25,7 +25,8 @@ krscvNOMAD <- function(xz,
                        lambda=lambda,
                        lambda.discrete=FALSE,
                        lambda.discrete.num=100,
-                       max.bb.eval=140,
+                       max.bb.eval=1000,
+                       max.eval=NULL,
                        min.mesh.size.integer="1",
                        min.mesh.size.real=paste("r",sqrt(.Machine$double.eps),sep=""),
                        min.frame.size.integer="1",
@@ -392,7 +393,7 @@ krscvNOMAD <- function(xz,
     ## Manual says precede by r means relative to up and lb... not
     ## quite what I was looking for
 
-    x0.starts <- if (isTRUE(print.output)) {
+    x0.starts <- if (as.integer(nmulti) > 1L) {
       .crs_nomad_capture_start_matrix(
         x0 = x0,
         nstart = if (nmulti > 0L) as.integer(nmulti) else 1L,
@@ -415,18 +416,33 @@ krscvNOMAD <- function(xz,
       aux.type = "num"
     )
 
-    solution<-snomadr(eval.f=eval.cv,
-                      n=length(x0),
-                      x0=if (!is.null(x0.starts)) as.numeric(x0.starts) else as.numeric(x0),
-                      bbin=bbin,
-                      bbout=bbout,
-                      lb=lb,
-                      ub=ub,
-                      nmulti=as.integer(nmulti),
-                      random.seed=random.seed,
-                      opts=opts,
-                      display.nomad.progress=print.output,
-                      params=params);
+    solution <- if (!is.null(x0.starts)) {
+      .crs_nomad_restart_sweep(eval.f=eval.cv,
+                               n=length(x0),
+                               starts=x0.starts,
+                               bbin=bbin,
+                               bbout=bbout,
+                               lb=lb,
+                               ub=ub,
+                               random.seed=random.seed,
+                               opts=opts,
+                               display.nomad.progress=print.output,
+                               params=params,
+                               use.cache=FALSE)
+    } else {
+      snomadr(eval.f=eval.cv,
+              n=length(x0),
+              x0=as.numeric(x0),
+              bbin=bbin,
+              bbout=bbout,
+              lb=lb,
+              ub=ub,
+              nmulti=as.integer(nmulti),
+              random.seed=random.seed,
+              opts=opts,
+              display.nomad.progress=print.output,
+              params=params)
+    }
 
     .crs_nomad_progress_finish(progress.env$nomad.progress)
     progress.env$emit <- FALSE
@@ -535,7 +551,10 @@ krscvNOMAD <- function(xz,
   }
 
   opts$"EPSILON" <- .Machine$double.eps
-  opts$"MAX_BB_EVAL" <- max.bb.eval
+  opts <- .crs_nomad_apply_eval_budget(opts,
+                                       max.bb.eval = max.bb.eval,
+                                       max.eval = max.eval,
+                                       context = "krscvNOMAD")
   opts <- .crs_nomad_apply_source_geometry(
     opts,
     roles = geometry.roles,
@@ -672,6 +691,15 @@ krscvNOMAD <- function(xz,
         cv.objc.vec=cv.vec,
         num.x=num.x,
         cv.func=cv.func,
-        tau=tau)
+        tau=tau,
+        nomad.restart.contract=nomad.solution$restart.contract,
+        nomad.best.restart=nomad.solution$best.restart,
+        nomad.restart.objectives=nomad.solution$restart.fval,
+        nomad.restart.evaluations=nomad.solution$restart.results,
+        nomad.summary=.crs_nomad_attach_effective_options(
+          .crs_nomad_summary_from_solution(nomad.solution),
+          opts
+        ),
+        cv.elapsed=as.numeric(difftime(t2, t1, units = "secs")))
 
 }

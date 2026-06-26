@@ -21,6 +21,563 @@ hat.from.lm.fit <- function(obj) {
   hat(qr_obj)
 }
 
+.crs_weighted_ls_qr_fit <- function(X,
+                                    y,
+                                    weights = NULL,
+                                    ridge.lambda = NULL,
+                                    tol = 1e-7,
+                                    use.svd.fallback = TRUE) {
+  if(is.null(weights)) {
+    weights <- rep(1, NROW(X))
+  }
+  sw <- sqrt(weights)
+  if(!is.null(ridge.lambda)) {
+    k <- ncol(X)
+    X.fit <- rbind(X, sqrt(ridge.lambda) * diag(k))
+    y.fit <- c(y, rep(0, k))
+    sw <- c(sw, rep(1, k))
+  } else {
+    X.fit <- X
+    y.fit <- y
+  }
+
+  method <- "qr"
+  model <- tryCatch({
+    .lm.fit(X.fit * sw, y.fit * sw, tol = tol)
+  }, error = function(e) {
+    if(use.svd.fallback) {
+      method <<- "svd"
+      svd_lm_fit(X.fit * sw, y.fit * sw, tol = tol)
+    } else {
+      NULL
+    }
+  })
+
+  list(model = model, method = if(is.null(model)) "none" else method)
+}
+
+.crs_weighted_ls_qr_result <- function(X,
+                                       y,
+                                       weights,
+                                       ridge.lambda,
+                                       status,
+                                       rcond = NA_real_,
+                                       use.svd.fallback = TRUE) {
+  qr.fit <- .crs_weighted_ls_qr_fit(X, y, weights, ridge.lambda,
+                                    use.svd.fallback = use.svd.fallback)
+  if(is.null(qr.fit$model)) {
+    return(list(status = status,
+                method = qr.fit$method,
+                coefficients = NULL,
+                qr = NULL,
+                chol = NULL,
+                rcond = rcond))
+  }
+  list(status = status,
+       method = qr.fit$method,
+       coefficients = qr.fit$model$coefficients,
+       qr = qr.fit$model,
+       chol = NULL,
+       rcond = rcond)
+}
+
+.crs_gram_stats_init <- function(use.gram.cv, record.gram.stats) {
+  if(use.gram.cv && record.gram.stats) {
+    list(used = 0L, fallback_rcond = 0L, fallback_chol = 0L,
+         min_rcond = Inf, fallback_weights_built = 0L,
+         cell_cache_builds = 0L, cell_cache_systems_batched = 0L,
+         cell_cache_systems_batched_cells = 0L,
+         cell_cache_systems_direct = 0L,
+         rank_cell_cache = 0L, rank_direct = 0L)
+  } else {
+    NULL
+  }
+}
+
+.crs_gram_stats_increment <- function(stats, name, by = 1L) {
+  if(is.null(stats)) return(stats)
+  stats[[name]] <- stats[[name]] + by
+  stats
+}
+
+.crs_gram_stats_update <- function(stats, fit) {
+  if(is.null(stats)) return(stats)
+  if(is.finite(fit$rcond)) {
+    stats$min_rcond <- min(stats$min_rcond, fit$rcond)
+  }
+  if(identical(fit$status, "gram")) {
+    stats$used <- stats$used + 1L
+  } else if(identical(fit$status, "fallback_chol")) {
+    stats$fallback_chol <- stats$fallback_chol + 1L
+  } else {
+    stats$fallback_rcond <- stats$fallback_rcond + 1L
+  }
+  if(isTRUE(fit$fallback.weights.built)) {
+    stats$fallback_weights_built <- stats$fallback_weights_built + 1L
+  }
+  stats
+}
+
+.crs_gram_stats_attach <- function(cv.out, stats) {
+  if(!is.null(stats)) {
+    if(is.infinite(stats$min_rcond)) stats$min_rcond <- NA_real_
+    attr(cv.out, "gram.stats") <- stats
+  }
+  cv.out
+}
+
+.crs_weighted_ls_core <- function(X,
+                                  y,
+                                  weights = NULL,
+                                  ridge.lambda = NULL,
+                                  rcond.min = 1e-8,
+                                  allow.fallback = TRUE,
+                                  use.svd.fallback = TRUE) {
+  if(!is.finite(rcond.min)) {
+    if(!allow.fallback) {
+      return(list(status = "fallback_rcond",
+                  method = "none",
+                  coefficients = NULL,
+                  qr = NULL,
+                  chol = NULL,
+                  rcond = NA_real_))
+    }
+    return(.crs_weighted_ls_qr_result(X, y, weights, ridge.lambda,
+                                      status = "fallback_rcond",
+                                      rcond = NA_real_,
+                                      use.svd.fallback = use.svd.fallback))
+  }
+
+  if(is.null(weights)) {
+    G <- crossprod(X)
+    rhs <- crossprod(X, y)
+  } else {
+    sw <- sqrt(weights)
+    Xw <- X * sw
+    G <- crossprod(Xw)
+    rhs <- crossprod(Xw, y * sw)
+  }
+  if(!is.null(ridge.lambda)) {
+    G <- G + ridge.lambda * diag(ncol(X))
+  }
+
+  R <- tryCatch(chol(G), error = function(e) NULL)
+  if(is.null(R)) {
+    if(!allow.fallback) {
+      return(list(status = "fallback_chol",
+                  method = "none",
+                  coefficients = NULL,
+                  qr = NULL,
+                  chol = NULL,
+                  rcond = NA_real_))
+    }
+    return(.crs_weighted_ls_qr_result(X, y, weights, ridge.lambda,
+                                      status = "fallback_chol",
+                                      rcond = NA_real_,
+                                      use.svd.fallback = use.svd.fallback))
+  }
+
+  rc.factor <- rcond(R, triangular = TRUE)
+  rc <- rc.factor^2
+  if(!is.finite(rc) || rc < rcond.min) {
+    if(!allow.fallback) {
+      return(list(status = "fallback_rcond",
+                  method = "none",
+                  coefficients = NULL,
+                  qr = NULL,
+                  chol = NULL,
+                  rcond = rc))
+    }
+    return(.crs_weighted_ls_qr_result(X, y, weights, ridge.lambda,
+                                      status = "fallback_rcond",
+                                      rcond = rc,
+                                      use.svd.fallback = use.svd.fallback))
+  }
+
+  beta <- backsolve(R, backsolve(R, rhs, transpose = TRUE))
+
+  list(
+    status = "gram",
+    method = "chol_gram",
+    coefficients = beta,
+    qr = NULL,
+    chol = R,
+    rcond = rc
+  )
+}
+
+.crs_weighted_ls_design <- function(P, basis) {
+  if(basis=="additive" || basis=="glp") {
+    cbind("(Intercept)" = 1, as.matrix(P))
+  } else {
+    as.matrix(P)
+  }
+}
+
+.crs_weighted_ls_predict_lm <- function(P.train,
+                                        y,
+                                        P.eval,
+                                        basis,
+                                        weights = NULL,
+                                        hat.rows = NULL,
+                                        rcond.min = 1e-8,
+                                        use.svd.fallback = TRUE) {
+  X <- .crs_weighted_ls_design(P.train, basis)
+  X.eval <- .crs_weighted_ls_design(P.eval, basis)
+  weights.work <- if(is.null(weights)) rep(1, NROW(X)) else weights
+
+  core <- .crs_weighted_ls_core(
+    X = X,
+    y = y,
+    weights = weights,
+    rcond.min = rcond.min,
+    allow.fallback = TRUE,
+    use.svd.fallback = use.svd.fallback
+  )
+
+  if(is.null(core$coefficients)) {
+    return(NULL)
+  }
+
+  rank <- if(identical(core$method, "chol_gram")) ncol(X) else core$qr$rank
+  if(rank < ncol(X)) {
+    return(NULL)
+  }
+
+  if(identical(core$method, "chol_gram")) {
+    Ginv <- chol2inv(core$chol)
+  } else {
+    R <- tryCatch(qr.R(core$qr), error = function(e) NULL)
+    if(is.null(R)) return(NULL)
+    Ginv.pivot <- chol2inv(R)
+    pivot <- core$qr$pivot[seq_len(ncol(X))]
+    if(is.null(pivot)) {
+      pivot <- seq_len(ncol(X))
+    }
+    Ginv <- matrix(0, ncol(X), ncol(X))
+    Ginv[pivot, pivot] <- Ginv.pivot
+  }
+
+  coefficients <- core$coefficients
+  fitted.train <- drop(X %*% coefficients)
+  residuals.train <- y - fitted.train
+  df.residual <- NROW(X) - rank
+  if(df.residual <= 0) {
+    return(NULL)
+  }
+  sigma2 <- sum(weights.work * residuals.train^2) / df.residual
+
+  fit <- drop(X.eval %*% coefficients)
+  se.fit <- sqrt(pmax(0, rowSums((X.eval %*% Ginv) * X.eval) * sigma2))
+  half.width <- qt(0.975, df.residual) * se.fit
+  fit.spline <- cbind(fit = fit,
+                      lwr = fit - half.width,
+                      upr = fit + half.width,
+                      se = se.fit)
+
+  hatvalues <- NULL
+  if(!is.null(hat.rows)) {
+    X.hat <- X[hat.rows, , drop = FALSE]
+    hatvalues <- weights.work[hat.rows] * rowSums((X.hat %*% Ginv) * X.hat)
+  }
+
+  list(fitted.values = fit.spline,
+       hatvalues = hatvalues,
+       rank = rank,
+       df.residual = df.residual,
+       method = core$method,
+       rcond = core$rcond)
+}
+
+.crs_weighted_ls_deriv_lm <- function(P.train,
+                                      y,
+                                      P.deriv,
+                                      basis,
+                                      weights = NULL,
+                                      deriv.ind.vec = NULL,
+                                      rcond.min = 1e-8,
+                                      use.svd.fallback = TRUE) {
+  X <- .crs_weighted_ls_design(P.train, basis)
+  weights.work <- if(is.null(weights)) rep(1, NROW(X)) else weights
+
+  core <- .crs_weighted_ls_core(
+    X = X,
+    y = y,
+    weights = weights,
+    rcond.min = rcond.min,
+    allow.fallback = TRUE,
+    use.svd.fallback = use.svd.fallback
+  )
+
+  if(is.null(core$coefficients)) {
+    return(NULL)
+  }
+
+  rank <- if(identical(core$method, "chol_gram")) ncol(X) else core$qr$rank
+  if(rank < ncol(X)) {
+    return(NULL)
+  }
+  df.residual <- NROW(X) - rank
+  if(df.residual <= 0) {
+    return(NULL)
+  }
+
+  if(identical(core$method, "chol_gram")) {
+    Ginv <- chol2inv(core$chol)
+  } else {
+    R <- tryCatch(qr.R(core$qr), error = function(e) NULL)
+    if(is.null(R)) return(NULL)
+    Ginv.pivot <- chol2inv(R)
+    pivot <- core$qr$pivot[seq_len(ncol(X))]
+    if(is.null(pivot)) {
+      pivot <- seq_len(ncol(X))
+    }
+    Ginv <- matrix(0, ncol(X), ncol(X))
+    Ginv[pivot, pivot] <- Ginv.pivot
+  }
+
+  coefficients <- drop(core$coefficients)
+  fitted.train <- drop(X %*% coefficients)
+  residuals.train <- y - fitted.train
+  sigma2 <- sum(weights.work * residuals.train^2) / df.residual
+
+  if(basis=="additive") {
+    if(is.null(deriv.ind.vec)) {
+      stop(" additive derivative columns are missing")
+    }
+    beta.deriv <- coefficients[-1][deriv.ind.vec]
+    Ginv.deriv <- Ginv[-1,-1,drop=FALSE][deriv.ind.vec,deriv.ind.vec,drop=FALSE]
+    P.deriv <- P.deriv[,deriv.ind.vec,drop=FALSE]
+  } else if(basis=="glp") {
+    beta.deriv <- coefficients[-1]
+    Ginv.deriv <- Ginv[-1,-1,drop=FALSE]
+  } else {
+    beta.deriv <- coefficients
+    Ginv.deriv <- Ginv
+  }
+
+  deriv.fit <- drop(P.deriv %*% beta.deriv)
+  se.deriv <- sqrt(rowSums((P.deriv %*% Ginv.deriv) * P.deriv) * sigma2)
+
+  list(deriv = deriv.fit,
+       se = se.deriv,
+       rank = rank,
+       df.residual = df.residual,
+       method = core$method,
+       rcond = core$rcond)
+}
+
+.crs_weighted_ls_cv_rows <- function(X,
+                                     y,
+                                     weights = NULL,
+                                     rows,
+                                     ridge.lambda = NULL,
+                                     rcond.min = 1e-8,
+                                     allow.fallback = TRUE,
+                                     use.svd.fallback = TRUE) {
+  weights.work <- if(is.null(weights)) rep(1, NROW(X)) else weights
+
+  core <- .crs_weighted_ls_core(
+    X = X,
+    y = y,
+    weights = weights,
+    ridge.lambda = ridge.lambda,
+    rcond.min = rcond.min,
+    allow.fallback = allow.fallback,
+    use.svd.fallback = use.svd.fallback
+  )
+
+  if(is.null(core$coefficients)) {
+    return(list(status = core$status,
+                method = core$method,
+                residuals.rows = NULL,
+                hat.rows = NULL,
+                rank = NULL,
+                rcond = core$rcond))
+  }
+
+  X.rows <- X[rows, , drop = FALSE]
+
+  if(identical(core$method, "chol_gram")) {
+    q <- backsolve(core$chol, t(X.rows), transpose = TRUE)
+    hat.rows <- weights.work[rows] * colSums(q * q)
+    residuals.rows <- y[rows] - drop(X.rows %*% core$coefficients)
+  } else if(!is.null(ridge.lambda)) {
+    hat.all <- hat.from.lm.fit(core$qr)
+    hat.rows <- hat.all[seq_len(NROW(X))][rows]
+    raw.residuals <- core$qr$residuals[seq_len(NROW(X))] / sqrt(weights.work)
+    residuals.rows <- raw.residuals[rows]
+  } else {
+    hat.rows <- hat.from.lm.fit(core$qr)[rows]
+    residuals.rows <- (core$qr$residuals / sqrt(weights.work))[rows]
+  }
+
+  list(
+    status = core$status,
+    method = core$method,
+    rcond = core$rcond,
+    rank = if(identical(core$method, "chol_gram")) ncol(X) else core$qr$rank,
+    residuals.rows = residuals.rows,
+    hat.rows = hat.rows
+  )
+}
+
+.crs_kernel_cell_weights <- function(z.unique,
+                                     ind.vals,
+                                     lambda,
+                                     is.ordered.z) {
+  cells <- z.unique[ind.vals, , drop = FALSE]
+  out <- matrix(NA_real_, nrow = length(ind.vals), ncol = length(ind.vals))
+  for(i in seq_along(ind.vals)) {
+    out[i, ] <- prod.kernel.matrix(
+      Z = cells,
+      z = z.unique[ind.vals[i], ],
+      lambda = lambda,
+      is.ordered.z = is.ordered.z
+    )
+  }
+  out
+}
+
+.crs_cell_cache_build <- function(X,
+                                  y,
+                                  ind,
+                                  ind.vals,
+                                  weights = NULL) {
+  if(is.null(weights)) weights <- rep(1, NROW(X))
+  p <- NCOL(X)
+  ncell <- length(ind.vals)
+  G.flat <- matrix(0, nrow = p * p, ncol = ncell)
+  rhs <- matrix(0, nrow = p, ncol = ncell)
+
+  for(j in seq_along(ind.vals)) {
+    rows <- ind == ind.vals[j]
+    sw <- sqrt(weights[rows])
+    Xw <- X[rows, , drop = FALSE] * sw
+    G.flat[, j] <- as.vector(crossprod(Xw))
+    rhs[, j] <- drop(crossprod(Xw, y[rows] * sw))
+  }
+
+  list(G.flat = G.flat, rhs = rhs, p = p, ncell = ncell)
+}
+
+.crs_is_fullrank_gram <- function(G, n, p) {
+  e <- eigen(G, symmetric = TRUE, only.values = TRUE)$values
+  e[1] > 0 && abs(e[length(e)] / e[1]) >
+    max(n, p) * max(sqrt(abs(e))) * .Machine$double.eps
+}
+
+.crs_cell_cache_system <- function(cache,
+                                   cell.weights,
+                                   ridge.lambda = NULL) {
+  G <- matrix(drop(cache$G.flat %*% cell.weights), cache$p, cache$p)
+  rhs <- drop(cache$rhs %*% cell.weights)
+  if(!is.null(ridge.lambda)) {
+    G <- G + ridge.lambda * diag(cache$p)
+  }
+  list(G = G, rhs = rhs)
+}
+
+.crs_cell_cache_systems <- function(cache,
+                                    cell.weights,
+                                    max.bytes = getOption("crs.cell.cache.systems.max.bytes",
+                                                          512 * 1024^2)) {
+  ncell <- nrow(cell.weights)
+  needed.bytes <- 8 * (as.double(cache$p) * cache$p * ncell +
+                         as.double(cache$p) * ncell)
+  if(is.finite(max.bytes) && needed.bytes > max.bytes) {
+    return(NULL)
+  }
+
+  list(
+    G.flat = cache$G.flat %*% t(cell.weights),
+    rhs = cache$rhs %*% t(cell.weights),
+    p = cache$p
+  )
+}
+
+.crs_cell_cache_system_at <- function(systems,
+                                      index,
+                                      ridge.lambda = NULL) {
+  G <- matrix(systems$G.flat[, index], systems$p, systems$p)
+  rhs <- systems$rhs[, index]
+  if(!is.null(ridge.lambda)) {
+    G <- G + ridge.lambda * diag(systems$p)
+  }
+  list(G = G, rhs = rhs)
+}
+
+.crs_weighted_ls_cv_rows_system <- function(X,
+                                            y,
+                                            rows,
+                                            row.weights,
+                                            G,
+                                            rhs,
+                                            fallback.weights = NULL,
+                                            fallback.weights.fun = NULL,
+                                            ridge.lambda = NULL,
+                                            rcond.min = 1e-8,
+                                            allow.fallback = TRUE,
+                                            use.svd.fallback = TRUE) {
+  fallback_fit <- function(status, rcond) {
+    weights.fallback <- fallback.weights
+    fallback.weights.built <- FALSE
+    if(is.null(weights.fallback) && is.function(fallback.weights.fun)) {
+      weights.fallback <- fallback.weights.fun()
+      fallback.weights.built <- TRUE
+    }
+    if(allow.fallback && !is.null(weights.fallback)) {
+      fit <- .crs_weighted_ls_cv_rows(
+        X = X,
+        y = y,
+        weights = weights.fallback,
+        rows = rows,
+        ridge.lambda = ridge.lambda,
+        rcond.min = Inf,
+        allow.fallback = TRUE,
+        use.svd.fallback = use.svd.fallback
+      )
+      fit$status <- status
+      fit$rcond <- rcond
+      fit$fallback.weights.built <- fallback.weights.built
+      return(fit)
+    }
+    list(status = status,
+         method = "none",
+         residuals.rows = NULL,
+         hat.rows = NULL,
+         rank = NULL,
+         rcond = rcond,
+         fallback.weights.built = fallback.weights.built)
+  }
+
+  if(!is.finite(rcond.min)) {
+    return(fallback_fit("fallback_rcond", NA_real_))
+  }
+
+  R <- tryCatch(chol(G), error = function(e) NULL)
+  if(is.null(R)) {
+    return(fallback_fit("fallback_chol", NA_real_))
+  }
+
+  rc <- rcond(R, triangular = TRUE)^2
+  if(!is.finite(rc) || rc < rcond.min) {
+    return(fallback_fit("fallback_rcond", rc))
+  }
+
+  beta <- backsolve(R, backsolve(R, rhs, transpose = TRUE))
+  X.rows <- X[rows, , drop = FALSE]
+  q <- backsolve(R, t(X.rows), transpose = TRUE)
+  list(
+    status = "gram",
+    method = "chol_gram",
+    rcond = rc,
+    rank = ncol(X),
+    residuals.rows = y[rows] - drop(X.rows %*% beta),
+    hat.rows = row.weights[rows] * colSums(q * q)
+  )
+}
+
 prod.spline <- function(x,
                         z=NULL,
                         K=NULL,
@@ -289,47 +846,64 @@ predictKernelSpline <- function(x,
       ## Degree > 0, fitted/evaluation
       P.train <- prod.spline(x=x, K=K, knots=knots, basis=basis,
                              display.warnings=display.warnings)
-      if(is.null(xeval)) {
-        P.eval <- P.train
-        fit.spline <- matrix(NA,nrow=n,ncol=4)
-        htt <- numeric(length=n)
-        P.hat <- numeric(length=n)
-        for(i in seq_len(nrow.z.unique)) {
-          zz <- ind == ind.vals[i]
-          L <- prod.kernel.matrix(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
-          if(!is.null(weights)) L <- weights*L
-          P <- P.train
-          k <- NCOL(P)
-          if(basis=="additive" || basis=="glp") {
-            if(is.null(tau))
-              model.z.unique <- lm(y~P,weights=L)
-            else
-              suppressWarnings(model.z.unique <- rq(y~P,weights=L,tau=tau,method="fn"))
-            model.z.unique.hat <- lm(y~P,weights=L)
-          } else {
-            if(is.null(tau))
-              model.z.unique <- lm(y~P-1,weights=L)
-            else
-              suppressWarnings(model.z.unique <- rq(y~P-1,weights=L,tau=tau,method="fn"))
-            model.z.unique.hat <- lm(y~P-1,weights=L)
-          }
-          if(model.return) model[[i]] <- model.z.unique
-          if(is.null(tau))
-            htt[zz] <- hatvalues(model.z.unique)[zz]
-          else
-            htt[zz] <- hatvalues(model.z.unique.hat)[zz]
+	      if(is.null(xeval)) {
+	        P.eval <- P.train
+	        fit.spline <- matrix(NA,nrow=n,ncol=4)
+	        htt <- numeric(length=n)
+	        P.hat <- numeric(length=n)
+	        rank.kernel <- NULL
+	        for(i in seq_len(nrow.z.unique)) {
+	          zz <- ind == ind.vals[i]
+	          L <- prod.kernel.matrix(Z=z,z=z.unique[ind.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
+	          if(!is.null(weights)) L <- weights*L
+	          P <- P.train
+	          k <- NCOL(P)
+	          P.hat[zz] <- sum(L)
+	          P <- P.eval[zz,,drop=FALSE]
+	          if(is.null(tau) && !model.return) {
+	            tmp.fast <- .crs_weighted_ls_predict_lm(P.train=P.train,
+	                                                    y=y,
+	                                                    P.eval=P,
+	                                                    basis=basis,
+	                                                    weights=L,
+	                                                    hat.rows=which(zz))
+	            if(!is.null(tmp.fast)) {
+	              htt[zz] <- tmp.fast$hatvalues
+	              fit.spline[zz,] <- tmp.fast$fitted.values
+	              rank.kernel <- tmp.fast$rank
+	              next
+	            }
+	          }
+	          P <- P.train
+	          if(basis=="additive" || basis=="glp") {
+	            if(is.null(tau))
+	              model.z.unique <- lm(y~P,weights=L)
+	            else
+	              suppressWarnings(model.z.unique <- rq(y~P,weights=L,tau=tau,method="fn"))
+	            model.z.unique.hat <- lm(y~P,weights=L)
+	          } else {
+	            if(is.null(tau))
+	              model.z.unique <- lm(y~P-1,weights=L)
+	            else
+	              suppressWarnings(model.z.unique <- rq(y~P-1,weights=L,tau=tau,method="fn"))
+	            model.z.unique.hat <- lm(y~P-1,weights=L)
+	          }
+	          if(model.return) model[[i]] <- model.z.unique
+	          if(is.null(tau))
+	            htt[zz] <- hatvalues(model.z.unique)[zz]
+	          else
+	            htt[zz] <- hatvalues(model.z.unique.hat)[zz]
+	          P <- P.eval[zz,,drop=FALSE]
+	          tmp <- predict(model.z.unique,newdata=data.frame(as.matrix(P)),interval="confidence",se.fit=TRUE)
 
-          P.hat[zz] <- sum(L)
-          P <- P.eval[zz,,drop=FALSE]
-          tmp <- predict(model.z.unique,newdata=data.frame(as.matrix(P)),interval="confidence",se.fit=TRUE)
-
-          if(is.null(tau))
-            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
-          else
-            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/qnorm(0.975))
-          rm(tmp)
-        }
-      } else {
+	          if(is.null(tau))
+	            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+	          else
+	            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/qnorm(0.975))
+	          rank.kernel <- if(is.null(tau)) model.z.unique$rank else NCOL(model.z.unique$x)
+	          rm(tmp)
+	        }
+	      } else {
 
         ## Degree > 0, evaluation
         P.eval <- prod.spline(x=x, K=K, xeval=xeval, knots=knots, basis=basis,
@@ -341,39 +915,55 @@ predictKernelSpline <- function(x,
         ind.zeval.vals <-  unique(ind.zeval)
         nrow.zeval.unique <- nrow(zeval.unique)
 
-        num.eval <- nrow(zeval)
+	        num.eval <- nrow(zeval)
 
-        fit.spline <- matrix(NA,nrow=num.eval,ncol=4)
-        htt <- NULL ## No hatvalues for evaluation
-        P.hat <- NULL
-        for(i in seq_len(nrow.zeval.unique)) {
-          zz <- ind.zeval == ind.zeval.vals[i]
-          L <- prod.kernel.matrix(Z=z,z=zeval.unique[ind.zeval.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
-          if(!is.null(weights)) L <- weights*L
-          P <- P.train
-          k <- NCOL(P)
-          if(basis=="additive" || basis=="glp") {
-            if(is.null(tau))
-              model.z.unique <- lm(y~P,weights=L)
-            else
-              suppressWarnings(model.z.unique <- rq(y~P,weights=L,tau=tau,method="fn"))
-          } else {
-            if(is.null(tau))
-              model.z.unique <- lm(y~P-1,weights=L)
-            else
-              suppressWarnings(model.z.unique <- rq(y~P-1,weights=L,tau=tau,method="fn"))
-          }
-          if(model.return) model[[i]] <- model.z.unique
-          P <- P.eval[zz,,drop=FALSE]
-          tmp <- predict(model.z.unique,newdata=data.frame(as.matrix(P)),interval="confidence",se.fit=TRUE)
+	        fit.spline <- matrix(NA,nrow=num.eval,ncol=4)
+	        htt <- NULL ## No hatvalues for evaluation
+	        P.hat <- NULL
+	        rank.kernel <- NULL
+	        for(i in seq_len(nrow.zeval.unique)) {
+	          zz <- ind.zeval == ind.zeval.vals[i]
+	          L <- prod.kernel.matrix(Z=z,z=zeval.unique[ind.zeval.vals[i],],lambda=lambda,is.ordered.z=is.ordered.z)
+	          if(!is.null(weights)) L <- weights*L
+	          P <- P.train
+	          k <- NCOL(P)
+	          P <- P.eval[zz,,drop=FALSE]
+	          if(is.null(tau) && !model.return) {
+	            tmp.fast <- .crs_weighted_ls_predict_lm(P.train=P.train,
+	                                                    y=y,
+	                                                    P.eval=P,
+	                                                    basis=basis,
+	                                                    weights=L)
+	            if(!is.null(tmp.fast)) {
+	              fit.spline[zz,] <- tmp.fast$fitted.values
+	              rank.kernel <- tmp.fast$rank
+	              next
+	            }
+	          }
+	          P <- P.train
+	          if(basis=="additive" || basis=="glp") {
+	            if(is.null(tau))
+	              model.z.unique <- lm(y~P,weights=L)
+	            else
+	              suppressWarnings(model.z.unique <- rq(y~P,weights=L,tau=tau,method="fn"))
+	          } else {
+	            if(is.null(tau))
+	              model.z.unique <- lm(y~P-1,weights=L)
+	            else
+	              suppressWarnings(model.z.unique <- rq(y~P-1,weights=L,tau=tau,method="fn"))
+	          }
+	          if(model.return) model[[i]] <- model.z.unique
+	          P <- P.eval[zz,,drop=FALSE]
+	          tmp <- predict(model.z.unique,newdata=data.frame(as.matrix(P)),interval="confidence",se.fit=TRUE)
 
-          if(is.null(tau))
-            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
-          else
-            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/qnorm(0.975))
+	          if(is.null(tau))
+	            fit.spline[zz,] <- cbind(tmp[[1]],tmp[[2]])
+	          else
+	            fit.spline[zz,] <- cbind(tmp,(tmp[,3]-tmp[,1])/qnorm(0.975))
+	          rank.kernel <- if(is.null(tau)) model.z.unique$rank else NCOL(model.z.unique$x)
 
-          rm(tmp)
-        }
+	          rm(tmp)
+	        }
 
       }
     } else {
@@ -453,11 +1043,13 @@ predictKernelSpline <- function(x,
 
     }
 
-    if(is.null(tau))
-      rank <- model.z.unique$rank ## same for all models
-    else
-      rank <- NCOL(model.z.unique$x) ## same for all models
-  }
+	    if(exists("rank.kernel") && !is.null(rank.kernel))
+	      rank <- rank.kernel
+	    else if(is.null(tau))
+	      rank <- model.z.unique$rank ## same for all models
+	    else
+	      rank <- NCOL(model.z.unique$x) ## same for all models
+	  }
 
   .crs_progress_status_clear(progress.status)
 
@@ -632,14 +1224,27 @@ derivKernelSpline <- function(x,
           dim.P.tensor <- NCOL(P)
 
           if(basis=="additive") {
-            if(is.null(tau))
-              model <- lm(y~P,weights=L)
-            else
-              suppressWarnings(model <- rq(y~P,tau=tau,method="fn",weights=L))
             dim.P.deriv <- sum(K.additive[deriv.index,])
             deriv.start <- if (deriv.index != 1) sum(K.additive[.crs_index_block(0L, deriv.index - 1L), ]) + 1 else 1
             deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
             deriv.ind.vec <- deriv.start:deriv.end
+            if(is.null(tau)) {
+              tmp.fast <- .crs_weighted_ls_deriv_lm(P.train=P,
+                                                    y=y,
+                                                    P.deriv=P.deriv,
+                                                    basis=basis,
+                                                    weights=L,
+                                                    deriv.ind.vec=deriv.ind.vec)
+              if(!is.null(tmp.fast)) {
+                deriv.spline[zz] <- tmp.fast$deriv
+                se.deriv[zz] <- tmp.fast$se
+                next
+              }
+            }
+            if(is.null(tau))
+              model <- lm(y~P,weights=L)
+            else
+              suppressWarnings(model <- rq(y~P,tau=tau,method="fn",weights=L))
             deriv.spline[zz] <- P.deriv[,deriv.ind.vec,drop=FALSE]%*%(coef(model)[-1])[deriv.ind.vec]
             if(is.null(tau))
               vcov.model <- vcov(model)[-1,-1,drop=FALSE]
@@ -648,6 +1253,18 @@ derivKernelSpline <- function(x,
 
             se.deriv[zz] <- sapply(seq_len(NROW(P.deriv)), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })
           } else if(basis=="tensor") {
+            if(is.null(tau)) {
+              tmp.fast <- .crs_weighted_ls_deriv_lm(P.train=P,
+                                                    y=y,
+                                                    P.deriv=P.deriv,
+                                                    basis=basis,
+                                                    weights=L)
+              if(!is.null(tmp.fast)) {
+                deriv.spline[zz] <- tmp.fast$deriv
+                se.deriv[zz] <- tmp.fast$se
+                next
+              }
+            }
             if(is.null(tau))
               model <- lm(y~P-1,weights=L)
             else
@@ -662,6 +1279,18 @@ derivKernelSpline <- function(x,
 
             se.deriv[zz] <- sapply(seq_len(NROW(P.deriv)), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
           } else if(basis=="glp") {
+            if(is.null(tau)) {
+              tmp.fast <- .crs_weighted_ls_deriv_lm(P.train=P,
+                                                    y=y,
+                                                    P.deriv=P.deriv,
+                                                    basis=basis,
+                                                    weights=L)
+              if(!is.null(tmp.fast)) {
+                deriv.spline[zz] <- tmp.fast$deriv
+                se.deriv[zz] <- tmp.fast$se
+                next
+              }
+            }
             if(is.null(tau))
               model <- lm(y~P,weights=L)
             else
@@ -707,15 +1336,28 @@ derivKernelSpline <- function(x,
           dim.P.tensor <- NCOL(P)
 
           if(basis=="additive") {
+            dim.P.deriv <- sum(K.additive[deriv.index,])
+            deriv.start <- if (deriv.index != 1) sum(K.additive[.crs_index_block(0L, deriv.index - 1L), ]) + 1 else 1
+            deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
+            deriv.ind.vec <- deriv.start:deriv.end
+            if(is.null(tau)) {
+              tmp.fast <- .crs_weighted_ls_deriv_lm(P.train=P,
+                                                    y=y,
+                                                    P.deriv=P.deriv,
+                                                    basis=basis,
+                                                    weights=L,
+                                                    deriv.ind.vec=deriv.ind.vec)
+              if(!is.null(tmp.fast)) {
+                deriv.spline[zz] <- tmp.fast$deriv
+                se.deriv[zz] <- tmp.fast$se
+                next
+              }
+            }
             if(is.null(tau))
               model <- lm(y~P,weights=L)
             else
               suppressWarnings(model <- rq(y~P,weights=L,tau=tau,method="fn"))
 
-            dim.P.deriv <- sum(K.additive[deriv.index,])
-            deriv.start <- if (deriv.index != 1) sum(K.additive[.crs_index_block(0L, deriv.index - 1L), ]) + 1 else 1
-            deriv.end <- deriv.start+sum(K.additive[deriv.index,])-1
-            deriv.ind.vec <- deriv.start:deriv.end
             deriv.spline[zz] <- P.deriv[,deriv.ind.vec,drop=FALSE]%*%(coef(model)[-1])[deriv.ind.vec]
             if(is.null(tau))
               vcov.model <- vcov(model)[-1,-1,drop=FALSE]
@@ -724,6 +1366,18 @@ derivKernelSpline <- function(x,
 
             se.deriv[zz] <- sapply(seq_len(NROW(P.deriv)), function(i){ sqrt(P.deriv[i,deriv.ind.vec,drop=FALSE]%*%vcov.model[deriv.ind.vec,deriv.ind.vec]%*%t(P.deriv[i,deriv.ind.vec,drop=FALSE])) })
           } else if(basis=="tensor") {
+            if(is.null(tau)) {
+              tmp.fast <- .crs_weighted_ls_deriv_lm(P.train=P,
+                                                    y=y,
+                                                    P.deriv=P.deriv,
+                                                    basis=basis,
+                                                    weights=L)
+              if(!is.null(tmp.fast)) {
+                deriv.spline[zz] <- tmp.fast$deriv
+                se.deriv[zz] <- tmp.fast$se
+                next
+              }
+            }
             if(is.null(tau))
               model <- lm(y~P-1,weights=L)
             else
@@ -737,6 +1391,18 @@ derivKernelSpline <- function(x,
 
             se.deriv[zz] <- sapply(seq_len(NROW(P.deriv)), function(i){ sqrt(P.deriv[i,,drop=FALSE]%*%vcov.model%*%t(P.deriv[i,,drop=FALSE])) })
           } else if(basis=="glp") {
+            if(is.null(tau)) {
+              tmp.fast <- .crs_weighted_ls_deriv_lm(P.train=P,
+                                                    y=y,
+                                                    P.deriv=P.deriv,
+                                                    basis=basis,
+                                                    weights=L)
+              if(!is.null(tmp.fast)) {
+                deriv.spline[zz] <- tmp.fast$deriv
+                se.deriv[zz] <- tmp.fast$se
+                next
+              }
+            }
             if(is.null(tau))
               model <- lm(y~P,weights=L)
             else
@@ -799,6 +1465,7 @@ preditFactorSpline <- function(x,
                                weights=NULL,
                                display.warnings=TRUE,
                                display.nomad.progress=TRUE,
+                               fast.predict.only=FALSE,
                                ...){
 
   if(missing(x) || missing(y) || missing (K)) stop(" must provide x, y and K")
@@ -833,6 +1500,33 @@ preditFactorSpline <- function(x,
     ## Degree > 0
 
     P <- prod.spline(x=x,z=z,K=K,I=I,knots=knots,basis=basis,display.warnings=display.warnings)
+
+    if(isTRUE(fast.predict.only) &&
+       is.null(tau) &&
+       !isTRUE(prune) &&
+       !is.null(xeval)) {
+      P.eval <- prod.spline(x=x,z=z,K=K,I=I,xeval=xeval,zeval=zeval,
+                            knots=knots,basis=basis,
+                            display.warnings=display.warnings)
+      tmp.fast <- .crs_weighted_ls_predict_lm(P.train=P,
+                                              y=y,
+                                              P.eval=P.eval,
+                                              basis=basis,
+                                              weights=weights)
+      if(!is.null(tmp.fast)) {
+        set_status()
+        return(list(fitted.values=tmp.fast$fitted.values,
+                    df.residual=tmp.fast$df.residual,
+                    rank=tmp.fast$rank,
+                    model=NULL,
+                    hatvalues=NULL,
+                    cv=NULL,
+                    cv.pruned=NULL,
+                    prune=prune,
+                    prune.index=!logical(length=NCOL(P)),
+                    tau=tau))
+      }
+    }
 
     if(prune && is.null(prune.index)) {
 
@@ -1197,7 +1891,11 @@ cv.kernel.spline.wrapper <- function(x,
                                      tau=NULL,
                                      weights=NULL,
                                      singular.ok=FALSE,
-                                     display.warnings=TRUE) {
+                                     display.warnings=TRUE,
+                                     use.gram.cv=TRUE,
+                                     gram.rcond.min=1e-8,
+                                     record.gram.stats=FALSE,
+                                     use.cell.cache=TRUE) {
 
   knots.opt <- knots;
 
@@ -1223,7 +1921,11 @@ cv.kernel.spline.wrapper <- function(x,
                            tau=tau,
                            weights=weights,
                            singular.ok=singular.ok,
-                           display.warnings=display.warnings)
+                           display.warnings=display.warnings,
+                           use.gram.cv=use.gram.cv,
+                           gram.rcond.min=gram.rcond.min,
+                           record.gram.stats=record.gram.stats,
+                           use.cell.cache=use.cell.cache)
 
     cv.uniform <- cv.kernel.spline(x=x,
                                    y=y,
@@ -1243,7 +1945,11 @@ cv.kernel.spline.wrapper <- function(x,
                                    tau=tau,
                                    weights=weights,
                                    singular.ok=singular.ok,
-                                   display.warnings=display.warnings)
+                                   display.warnings=display.warnings,
+                                   use.gram.cv=use.gram.cv,
+                                   gram.rcond.min=gram.rcond.min,
+                                   record.gram.stats=record.gram.stats,
+                                   use.cell.cache=use.cell.cache)
     if(cv > cv.uniform) {
       cv <- cv.uniform
       knots.opt <- "uniform"
@@ -1269,7 +1975,11 @@ cv.kernel.spline.wrapper <- function(x,
                            tau=tau,
                            weights=weights,
                            singular.ok=singular.ok,
-                           display.warnings=display.warnings)
+                           display.warnings=display.warnings,
+                           use.gram.cv=use.gram.cv,
+                           gram.rcond.min=gram.rcond.min,
+                           record.gram.stats=record.gram.stats,
+                           use.cell.cache=use.cell.cache)
 
   }
 
@@ -1306,7 +2016,10 @@ cv.factor.spline.wrapper <- function(x,
                                      tau=NULL,
                                      weights=NULL,
                                      singular.ok=FALSE,
-                                     display.warnings=TRUE) {
+                                     display.warnings=TRUE,
+                                     use.gram.cv=TRUE,
+                                     gram.rcond.min=1e-8,
+                                     record.gram.stats=FALSE) {
 
   knots.opt <- knots
 
@@ -1326,7 +2039,10 @@ cv.factor.spline.wrapper <- function(x,
                            tau=tau,
                            weights=weights,
                            singular.ok=singular.ok,
-                           display.warnings=display.warnings)
+                           display.warnings=display.warnings,
+                           use.gram.cv=use.gram.cv,
+                           gram.rcond.min=gram.rcond.min,
+                           record.gram.stats=record.gram.stats)
 
     cv.uniform <- cv.factor.spline(x=x,
                                    y=y,
@@ -1340,7 +2056,10 @@ cv.factor.spline.wrapper <- function(x,
                                    tau=tau,
                                    weights=weights,
                                    singular.ok=singular.ok,
-                                   display.warnings=display.warnings)
+                                   display.warnings=display.warnings,
+                                   use.gram.cv=use.gram.cv,
+                                   gram.rcond.min=gram.rcond.min,
+                                   record.gram.stats=record.gram.stats)
     if(cv > cv.uniform) {
       cv <- cv.uniform
       knots.opt <- "uniform"
@@ -1360,7 +2079,10 @@ cv.factor.spline.wrapper <- function(x,
                            tau=tau,
                            weights=weights,
                            singular.ok=singular.ok,
-                           display.warnings=display.warnings)
+                           display.warnings=display.warnings,
+                           use.gram.cv=use.gram.cv,
+                           gram.rcond.min=gram.rcond.min,
+                           record.gram.stats=record.gram.stats)
 
   }
 
@@ -1402,7 +2124,10 @@ cv.factor.spline <- function(x,
                              ridge.threshold=0.7,
                              use.svd.fallback=TRUE,
                              smooth.penalty=TRUE,
-                             penalty.scale=1000) {
+                             penalty.scale=1000,
+                             use.gram.cv=TRUE,
+                             gram.rcond.min=1e-8,
+                             record.gram.stats=FALSE) {
 
   if(missing(x) || missing(y) || missing(K)) stop(" must provide x, y and K")
   if(!is.matrix(K)) stop(" K must be a two-column matrix")
@@ -1410,12 +2135,14 @@ cv.factor.spline <- function(x,
   basis <- match.arg(basis)
   knots <- match.arg(knots)
   cv.func <- match.arg(cv.func)
+  use.gram.cv <- isTRUE(use.gram.cv)
 
   n <- NROW(x)
   have_tau <- !is.null(tau)
   have_w <- !is.null(weights)
   is_add <- (basis == "additive" || basis == "glp")
   cv.maxPenalty <- resolve_cv_maxPenalty(NULL, y, weights = weights, cv.func = cv.func)
+  gram.stats <- .crs_gram_stats_init(use.gram.cv, record.gram.stats)
 
   ## Check dimension of P prior to calculating the basis
 
@@ -1500,73 +2227,30 @@ cv.factor.spline <- function(x,
           ridge.lambda <- 1e-4      ## Very light regularization
         }
       }
-
-      ## Augment design matrix with ridge penalty
-      ## Solve: (X'X + lambda*I)beta = X'y
-      ## Equivalent to: [X; sqrt(lambda)I][beta] = [y; 0]
-      k_X <- ncol(X)
-      X_aug <- rbind(X, sqrt(ridge.lambda) * diag(k_X))
-      y_aug <- c(y, rep(0, k_X))
-
-      ## Apply weights to augmented system if needed
-      if(have_w) {
-        sw_aug <- c(sw, rep(1, k_X))
-        X_fit <- X_aug * sw_aug
-        y_fit <- y_aug * sw_aug
-      } else {
-        X_fit <- X_aug
-        y_fit <- y_aug
-      }
-
-      n_aug <- length(y_fit)
-
-    } else {
-      ## No ridge regularization
-      if(have_w) {
-        X_fit <- X * sw
-        y_fit <- y * sw
-      } else {
-        X_fit <- X
-        y_fit <- y
-      }
-      n_aug <- n
     }
 
     ## IMPROVEMENT 4: Fit with error handling and SVD fallback
     if(!have_tau) {
       ## Least squares fitting
 
-      model <- tryCatch({
-        .lm.fit(X_fit, y_fit, tol=1e-7)
-      }, error = function(e) {
-        if(use.svd.fallback) {
-          if(display.warnings) {
-            warning("lm.fit failed, using SVD fallback")
-          }
-          ## SVD-based fitting
-          svd_result <- svd_lm_fit(X_fit, y_fit, tol=1e-7)
-          return(svd_result)
-        } else {
-          return(NULL)
-        }
-      })
+      model <- .crs_weighted_ls_cv_rows(
+        X = X,
+        y = y,
+        weights = weights,
+        rows = seq_len(n),
+        ridge.lambda = if(use_ridge_now) ridge.lambda else NULL,
+        rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+        allow.fallback = TRUE,
+        use.svd.fallback = use.svd.fallback
+      )
+      gram.stats <- .crs_gram_stats_update(gram.stats, model)
 
-      if(is.null(model)) {
+      if(is.null(model$residuals.rows)) {
         return(cv.maxPenalty)
       }
 
-      ## Calculate residuals on ORIGINAL scale (not augmented)
-      if(use_ridge_now) {
-        ## Use original X, not augmented
-        fitted_vals <- X %*% model$coefficients
-        epsilon <- y - fitted_vals
-      } else {
-        if(have_w) {
-          epsilon <- model$residuals / sw
-        } else {
-          epsilon <- model$residuals
-        }
-      }
+      epsilon <- model$residuals.rows
+      htt <- model$hat.rows
 
       ## Check for rank deficiency (only if not using ridge)
       if(!singular.ok && !use_ridge_now) {
@@ -1580,18 +2264,6 @@ cv.factor.spline <- function(x,
             return(cv.maxPenalty)
           }
         }
-      }
-
-      ## Calculate hat values for CV
-      ## For ridge regression, we need to adjust the hat matrix calculation
-      if(use_ridge_now) {
-        ## Effective hat matrix for ridge: H = X(X'X + lambda*I)^{-1}X'
-        ## For augmented formulation: use hat values from augmented fit
-        ## but only for original observations
-        htt_aug <- hat.from.lm.fit(model)
-        htt <- htt_aug[seq_len(n)]
-      } else {
-        htt <- hat.from.lm.fit(model)
       }
 
     } else {
@@ -1662,7 +2334,8 @@ cv.factor.spline <- function(x,
     }
   }
 
-  return(if(is.na(cv)) cv.maxPenalty else cv)
+  cv.out <- if(is.na(cv)) cv.maxPenalty else cv
+  return(.crs_gram_stats_attach(cv.out, gram.stats))
 }
 
 ## Drop-in replacement for cv.kernel.spline with improved handling of
@@ -1718,7 +2391,11 @@ cv.kernel.spline <- function(x,
                              ridge.threshold=0.7,
                              use.svd.fallback=TRUE,
                              smooth.penalty=TRUE,
-                             penalty.scale=1000) {
+                             penalty.scale=1000,
+                             use.gram.cv=TRUE,
+                             gram.rcond.min=1e-8,
+                             record.gram.stats=FALSE,
+                             use.cell.cache=TRUE) {
 
   if(missing(x) || missing(y) || missing(K)) stop(" must provide x, y and K")
 
@@ -1728,12 +2405,14 @@ cv.kernel.spline <- function(x,
   if(is.null(is.ordered.z)) stop(" is.ordered.z must be provided")
   knots <- match.arg(knots)
   cv.func <- match.arg(cv.func)
+  use.gram.cv <- isTRUE(use.gram.cv)
 
   ## Without computing P, compute the number of columns that P would
   ## be and if degrees of freedom is 1 or less, return a large penalty.
 
   n <- length(y)
   cv.maxPenalty <- resolve_cv_maxPenalty(NULL, y, weights = weights, cv.func = cv.func)
+  gram.stats <- .crs_gram_stats_init(use.gram.cv, record.gram.stats)
 
   ## Check dimension of P prior to calculating the basis
   k_expected <- dimBS(basis=basis, kernel=TRUE, degree=K[,1], segments=K[,2])
@@ -1847,6 +2526,8 @@ cv.kernel.spline <- function(x,
         }
       }
 
+      htt.computed <- FALSE
+
       if(basis=="additive" || basis=="glp") {
         X <- cbind(1, P)
 
@@ -1863,31 +2544,35 @@ cv.kernel.spline <- function(x,
 
         ## Additive spline regression models have an intercept
         if(is.null(tau)) {
-          sw <- if(!is.null(weights)) sqrt(weights) else NULL
-          model <- fit_with_ridge(X, y, weights, use_ridge_now,
-                                  ridge.lambda, FALSE, sw)
+          ls.fit <- .crs_weighted_ls_cv_rows(
+            X = X,
+            y = y,
+            weights = weights,
+            rows = seq_len(n),
+            ridge.lambda = if(use_ridge_now) ridge.lambda else NULL,
+            rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+            allow.fallback = TRUE,
+            use.svd.fallback = use.svd.fallback
+          )
+          gram.stats <- .crs_gram_stats_update(gram.stats, ls.fit)
 
-          if(is.null(model)) {
-            return(cv.maxPenalty)
-          }
-
-          ## Calculate residuals on original scale
-          if(use_ridge_now) {
-            fitted_vals <- X %*% model$coefficients
-            epsilon <- y - fitted_vals
-          } else {
-            if(!is.null(weights)) {
-              epsilon <- model$residuals / sqrt(weights)
-            } else {
-              epsilon <- model$residuals
-            }
-          }
+          if(is.null(ls.fit$residuals.rows)) return(cv.maxPenalty)
+          epsilon <- ls.fit$residuals.rows
+          htt <- ls.fit$hat.rows
+          htt.computed <- TRUE
 
           ## Check rank (only if not using ridge)
           if(!singular.ok && !use_ridge_now) {
-            if(model$rank < ncol(X)) {
+            fit.rank <- if(!is.null(ls.fit$rank)) {
+              ls.fit$rank
+            } else if(!is.null(ls.fit$qr)) {
+              ls.fit$qr$rank
+            } else {
+              ncol(X)
+            }
+            if(fit.rank < ncol(X)) {
               if(smooth.penalty) {
-                rank_deficit <- ncol(X) - model$rank
+                rank_deficit <- ncol(X) - fit.rank
                 penalty_mult <- exp(rank_deficit / ncol(X))
                 return(penalty.scale * penalty_mult)
               } else {
@@ -1926,29 +2611,34 @@ cv.kernel.spline <- function(x,
         }
 
         if(is.null(tau)) {
-          sw <- if(!is.null(weights)) sqrt(weights) else NULL
-          model <- fit_with_ridge(X, y, weights, use_ridge_now,
-                                  ridge.lambda, FALSE, sw)
+          ls.fit <- .crs_weighted_ls_cv_rows(
+            X = X,
+            y = y,
+            weights = weights,
+            rows = seq_len(n),
+            ridge.lambda = if(use_ridge_now) ridge.lambda else NULL,
+            rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+            allow.fallback = TRUE,
+            use.svd.fallback = use.svd.fallback
+          )
+          gram.stats <- .crs_gram_stats_update(gram.stats, ls.fit)
 
-          if(is.null(model)) {
-            return(cv.maxPenalty)
-          }
-
-          if(use_ridge_now) {
-            fitted_vals <- X %*% model$coefficients
-            epsilon <- y - fitted_vals
-          } else {
-            if(!is.null(weights)) {
-              epsilon <- model$residuals / sqrt(weights)
-            } else {
-              epsilon <- model$residuals
-            }
-          }
+          if(is.null(ls.fit$residuals.rows)) return(cv.maxPenalty)
+          epsilon <- ls.fit$residuals.rows
+          htt <- ls.fit$hat.rows
+          htt.computed <- TRUE
 
           if(!singular.ok && !use_ridge_now) {
-            if(model$rank < ncol(X)) {
+            fit.rank <- if(!is.null(ls.fit$rank)) {
+              ls.fit$rank
+            } else if(!is.null(ls.fit$qr)) {
+              ls.fit$qr$rank
+            } else {
+              ncol(X)
+            }
+            if(fit.rank < ncol(X)) {
               if(smooth.penalty) {
-                rank_deficit <- ncol(X) - model$rank
+                rank_deficit <- ncol(X) - fit.rank
                 penalty_mult <- exp(rank_deficit / ncol(X))
                 return(penalty.scale * penalty_mult)
               } else {
@@ -1972,7 +2662,9 @@ cv.kernel.spline <- function(x,
         }
       }
 
-      htt <- hat(P)
+      if(!htt.computed) {
+        htt <- hat(P)
+      }
       htt <- pmin(htt, 1-.Machine$double.eps)
 
     } else {
@@ -2030,15 +2722,75 @@ cv.kernel.spline <- function(x,
         XP <- P
       }
 
+      use.cell.cache.now <- isTRUE(use.cell.cache) &&
+        isTRUE(use.gram.cv) &&
+        is.null(tau)
+      if(use.cell.cache.now) {
+        obs.weights.cache <- if(is.null(weights)) rep(1, n) else weights
+        cell.cache <- .crs_cell_cache_build(X = XP,
+                                            y = y,
+                                            ind = ind,
+                                            ind.vals = ind.vals,
+                                            weights = obs.weights.cache)
+        gram.stats <- .crs_gram_stats_increment(gram.stats,
+                                                "cell_cache_builds")
+        cell.kernel.weights <- .crs_kernel_cell_weights(
+          z.unique = z.unique,
+          ind.vals = ind.vals,
+          lambda = lambda,
+          is.ordered.z = is.ordered.z
+        )
+        cell.systems <- .crs_cell_cache_systems(
+          cache = cell.cache,
+          cell.weights = cell.kernel.weights
+        )
+        if(!is.null(cell.systems)) {
+          gram.stats <- .crs_gram_stats_increment(
+            gram.stats,
+            "cell_cache_systems_batched"
+          )
+          gram.stats <- .crs_gram_stats_increment(
+            gram.stats,
+            "cell_cache_systems_batched_cells",
+            by = nrow.z.unique
+          )
+        }
+      }
+
+      rank.full.positive.weights <- NULL
+      if(!singular.ok &&
+         isTRUE(all(lambda > 0)) &&
+         (is.null(weights) || isTRUE(all(weights > 0)))) {
+        if(use.cell.cache.now && is.null(weights)) {
+          rank.full.positive.weights <- .crs_is_fullrank_gram(
+            matrix(rowSums(cell.cache$G.flat), cell.cache$p, cell.cache$p),
+            n = n,
+            p = cell.cache$p
+          )
+          gram.stats <- .crs_gram_stats_increment(gram.stats,
+                                                  "rank_cell_cache")
+        } else {
+          rank.full.positive.weights <- is.fullrank(XP)
+          gram.stats <- .crs_gram_stats_increment(gram.stats,
+                                                  "rank_direct")
+        }
+      }
+
       for(i in seq_len(nrow.z.unique)) {
         if(!is.null(ind.list)) {
           zz <- ind.list[[i]]
         } else {
           zz <- ind == ind.vals[i]
         }
-        L <- prod.kernel.matrix(Z=z, z=z.unique[ind.vals[i],], lambda=lambda,
-                         is.ordered.z=is.ordered.z)
-        if(!is.null(weights)) L <- weights * L
+        L <- NULL
+        get_L <- function() {
+          if(is.null(L)) {
+            L <<- prod.kernel.matrix(Z=z, z=z.unique[ind.vals[i],], lambda=lambda,
+                                     is.ordered.z=is.ordered.z)
+            if(!is.null(weights)) L <<- weights * L
+          }
+          L
+        }
 
         ## Calculate ratio for this subset
         ratio_subset <- ncol(XP) / sum(zz)
@@ -2061,7 +2813,12 @@ cv.kernel.spline <- function(x,
         if(basis=="additive" || basis=="glp") {
           ## Test for full column rank (only if not using ridge)
           if(!singular.ok && !use_ridge_subset) {
-            if(!is.fullrank(XP*L)) {
+            full.rank <- if(!is.null(rank.full.positive.weights)) {
+              rank.full.positive.weights
+            } else {
+              is.fullrank(XP*get_L())
+            }
+            if(!full.rank) {
               if(smooth.penalty) {
                 return(penalty.scale * 2)
               } else {
@@ -2071,43 +2828,58 @@ cv.kernel.spline <- function(x,
           }
 
           if(is.null(tau)) {
-            sw <- sqrt(L)
-
-            if(use_ridge_subset) {
-              k_X <- ncol(XP)
-              X_aug <- rbind(XP, sqrt(ridge.lambda.subset) * diag(k_X))
-              y_aug <- c(y, rep(0, k_X))
-              sw_aug <- c(sw, rep(1, k_X))
-
-              model <- tryCatch({
-                .lm.fit(X_aug*sw_aug, y_aug*sw_aug, tol=1e-7)
-              }, error = function(e) {
-                if(use.svd.fallback) {
-                  svd_lm_fit(X_aug*sw_aug, y_aug*sw_aug, tol=1e-7)
-                } else {
-                  NULL
-                }
-              })
+            if(use.cell.cache.now) {
+              cache.system <- if(!is.null(cell.systems)) {
+                .crs_cell_cache_system_at(
+                  systems = cell.systems,
+                  index = i,
+                  ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL
+                )
+              } else {
+                gram.stats <- .crs_gram_stats_increment(
+                  gram.stats,
+                  "cell_cache_systems_direct"
+                )
+                .crs_cell_cache_system(
+                  cache = cell.cache,
+                  cell.weights = cell.kernel.weights[i, ],
+                  ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL
+                )
+              }
+              gram.fit <- .crs_weighted_ls_cv_rows_system(
+                X = XP,
+                y = y,
+                rows = zz,
+                row.weights = obs.weights.cache,
+                G = cache.system$G,
+                rhs = cache.system$rhs,
+                fallback.weights.fun = get_L,
+                ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL,
+                rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+                allow.fallback = TRUE,
+                use.svd.fallback = use.svd.fallback
+              )
             } else {
-              model <- tryCatch({
-                .lm.fit(XP*sw, y*sw, tol=1e-7)
-              }, error = function(e) {
-                if(use.svd.fallback) {
-                  svd_lm_fit(XP*sw, y*sw, tol=1e-7)
-                } else {
-                  NULL
-                }
-              })
+              gram.fit <- .crs_weighted_ls_cv_rows(
+                X = XP,
+                y = y,
+                weights = get_L(),
+                rows = zz,
+                rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+                ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL,
+                allow.fallback = TRUE,
+                use.svd.fallback = use.svd.fallback
+              )
             }
+            gram.stats <- .crs_gram_stats_update(gram.stats, gram.fit)
 
-            if(is.null(model)) {
+            if(is.null(gram.fit$residuals.rows)) {
               return(cv.maxPenalty)
             }
 
-            ## Check rank from model instead of is.fullrank
-            if(!singular.ok && !use_ridge_subset && model$rank < ncol(XP)) {
+            if(!singular.ok && !use_ridge_subset && gram.fit$rank < ncol(XP)) {
               if(smooth.penalty) {
-                rank_deficit <- ncol(XP) - model$rank
+                rank_deficit <- ncol(XP) - gram.fit$rank
                 penalty_mult <- exp(rank_deficit / ncol(XP))
                 return(penalty.scale * penalty_mult)
               } else {
@@ -2117,7 +2889,14 @@ cv.kernel.spline <- function(x,
 
           } else {
             ## Test for full column rank (rq case)
-            if(!singular.ok && !is.fullrank(XP*L)) {
+            if(!singular.ok) {
+              full.rank <- if(!is.null(rank.full.positive.weights)) {
+                rank.full.positive.weights
+              } else {
+                is.fullrank(XP*get_L())
+              }
+            }
+            if(!singular.ok && !full.rank) {
               if(smooth.penalty) {
                 return(penalty.scale * 2)
               } else {
@@ -2125,6 +2904,7 @@ cv.kernel.spline <- function(x,
               }
             }
 
+            L <- get_L()
             model <- tryCatch(rq.wfit(XP, y, weights=L, tau=tau, method="fn"),
                               error=function(e){FALSE})
             if(is.logical(model))
@@ -2136,42 +2916,58 @@ cv.kernel.spline <- function(x,
         } else {
           ## Tensor case
           if(is.null(tau)) {
-            sw <- sqrt(L)
-
-            if(use_ridge_subset) {
-              k_X <- ncol(P)
-              X_aug <- rbind(P, sqrt(ridge.lambda.subset) * diag(k_X))
-              y_aug <- c(y, rep(0, k_X))
-              sw_aug <- c(sw, rep(1, k_X))
-
-              model <- tryCatch({
-                .lm.fit(X_aug*sw_aug, y_aug*sw_aug, tol=1e-7)
-              }, error = function(e) {
-                if(use.svd.fallback) {
-                  svd_lm_fit(X_aug*sw_aug, y_aug*sw_aug, tol=1e-7)
-                } else {
-                  NULL
-                }
-              })
+            if(use.cell.cache.now) {
+              cache.system <- if(!is.null(cell.systems)) {
+                .crs_cell_cache_system_at(
+                  systems = cell.systems,
+                  index = i,
+                  ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL
+                )
+              } else {
+                gram.stats <- .crs_gram_stats_increment(
+                  gram.stats,
+                  "cell_cache_systems_direct"
+                )
+                .crs_cell_cache_system(
+                  cache = cell.cache,
+                  cell.weights = cell.kernel.weights[i, ],
+                  ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL
+                )
+              }
+              gram.fit <- .crs_weighted_ls_cv_rows_system(
+                X = P,
+                y = y,
+                rows = zz,
+                row.weights = obs.weights.cache,
+                G = cache.system$G,
+                rhs = cache.system$rhs,
+                fallback.weights.fun = get_L,
+                ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL,
+                rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+                allow.fallback = TRUE,
+                use.svd.fallback = use.svd.fallback
+              )
             } else {
-              model <- tryCatch({
-                .lm.fit(P*sw, y*sw, tol=1e-7)
-              }, error = function(e) {
-                if(use.svd.fallback) {
-                  svd_lm_fit(P*sw, y*sw, tol=1e-7)
-                } else {
-                  NULL
-                }
-              })
+              gram.fit <- .crs_weighted_ls_cv_rows(
+                X = P,
+                y = y,
+                weights = get_L(),
+                rows = zz,
+                rcond.min = if(use.gram.cv) gram.rcond.min else Inf,
+                ridge.lambda = if(use_ridge_subset) ridge.lambda.subset else NULL,
+                allow.fallback = TRUE,
+                use.svd.fallback = use.svd.fallback
+              )
             }
+            gram.stats <- .crs_gram_stats_update(gram.stats, gram.fit)
 
-            if(is.null(model)) {
+            if(is.null(gram.fit$residuals.rows)) {
               return(cv.maxPenalty)
             }
 
-            if(!singular.ok && !use_ridge_subset && model$rank < ncol(P)) {
+            if(!singular.ok && !use_ridge_subset && gram.fit$rank < ncol(P)) {
               if(smooth.penalty) {
-                rank_deficit <- ncol(P) - model$rank
+                rank_deficit <- ncol(P) - gram.fit$rank
                 penalty_mult <- exp(rank_deficit / ncol(P))
                 return(penalty.scale * penalty_mult)
               } else {
@@ -2181,7 +2977,14 @@ cv.kernel.spline <- function(x,
 
           } else {
             ## Test for full column rank (rq case)
-            if(!singular.ok && !is.fullrank(P*L)) {
+            if(!singular.ok) {
+              full.rank <- if(!is.null(rank.full.positive.weights)) {
+                rank.full.positive.weights
+              } else {
+                is.fullrank(P*get_L())
+              }
+            }
+            if(!singular.ok && !full.rank) {
               if(smooth.penalty) {
                 return(penalty.scale * 2)
               } else {
@@ -2189,6 +2992,7 @@ cv.kernel.spline <- function(x,
               }
             }
 
+            L <- get_L()
             model <- tryCatch(rq.wfit(P, y, weights=L, tau=tau, method="fn"),
                               error=function(e){FALSE})
             if(is.logical(model))
@@ -2199,21 +3003,8 @@ cv.kernel.spline <- function(x,
         }
 
         if(is.null(tau)) {
-          if(use_ridge_subset) {
-            ## For ridge, calculate residuals on original scale
-            if(basis=="additive" || basis=="glp") {
-              fitted_vals <- XP %*% model$coefficients
-            } else {
-              fitted_vals <- P %*% model$coefficients
-            }
-            epsilon[zz] <- (y - fitted_vals)[zz]
-            ## For ridge: hat values from augmented system, take first n
-            htt_all <- hat.from.lm.fit(model)
-            htt[zz] <- htt_all[seq_len(n)][zz]
-          } else {
-            epsilon[zz] <- (model$residuals/sw)[zz]
-            htt[zz] <- hat.from.lm.fit(model)[zz]
-          }
+          epsilon[zz] <- gram.fit$residuals.rows
+          htt[zz] <- gram.fit$hat.rows
         } else {
           epsilon[zz] <- residuals(model)[zz]
           htt[zz] <- hat.from.lm.fit(model.hat)[zz]
@@ -2298,7 +3089,8 @@ cv.kernel.spline <- function(x,
     }
   }
 
-  return(if(is.na(cv)) cv.maxPenalty else cv)
+  cv.out <- if(is.na(cv)) cv.maxPenalty else cv
+  return(.crs_gram_stats_attach(cv.out, gram.stats))
 }
 
 ## ============================================================================

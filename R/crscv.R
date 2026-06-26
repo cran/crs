@@ -1,3 +1,20 @@
+.crs_elapsed_seconds <- function(x) {
+  if (is.null(x) || !length(x))
+    return(NA_real_)
+
+  elapsed <- if (!is.null(names(x)) && "elapsed" %in% names(x)) {
+    suppressWarnings(as.numeric(x[["elapsed"]]))
+  } else if (length(x) >= 3L) {
+    suppressWarnings(as.numeric(x[[3L]]))
+  } else {
+    NA_real_
+  }
+
+  if (length(elapsed) != 1L || is.na(elapsed) || !is.finite(elapsed))
+    return(NA_real_)
+  elapsed
+}
+
 crscv <- function(K,
                   I,
                   basis,
@@ -18,7 +35,13 @@ crscv <- function(K,
                   cv.objc.vec,
                   num.x,
                   cv.func,
-                  tau) {
+                  tau,
+                  nomad.restart.contract = NULL,
+                  nomad.best.restart = NULL,
+                  nomad.restart.objectives = NULL,
+                  nomad.restart.evaluations = NULL,
+                  nomad.summary = NULL,
+                  cv.elapsed = NULL) {
 
   tregcv = list(K=K,
                 I=I,
@@ -41,6 +64,26 @@ crscv <- function(K,
                 num.x=num.x,
                 cv.func=cv.func,
                 tau=tau)
+
+  if (!is.null(nomad.restart.contract)) {
+    tregcv$nomad.restart.contract <- nomad.restart.contract
+  }
+  if (!is.null(nomad.best.restart)) {
+    tregcv$nomad.best.restart <- nomad.best.restart
+  }
+  if (!is.null(nomad.restart.objectives)) {
+    tregcv$nomad.restart.objectives <- nomad.restart.objectives
+  }
+  if (!is.null(nomad.restart.evaluations)) {
+    tregcv$nomad.restart.evaluations <- nomad.restart.evaluations
+  }
+  if (!is.null(nomad.summary)) {
+    tregcv$nomad.summary <- nomad.summary
+  }
+  cv.elapsed <- suppressWarnings(as.numeric(cv.elapsed)[1L])
+  if (length(cv.elapsed) == 1L && !is.na(cv.elapsed) && is.finite(cv.elapsed)) {
+    tregcv$cv.elapsed <- cv.elapsed
+  }
 
   class(tregcv) <- "crscv"
 
@@ -67,6 +110,9 @@ print.crscv <- function(x, ...){
     cat(paste("\n\nMaximum spline degree for search: ",format(x$degree.max),sep=""),sep="")
     cat(paste("\nBasis: ", x$basis,sep=""))
     if(x$restarts>0) cat(paste("\nNumber of restarts = ", format(x$restarts),sep=""),sep="")
+    .crs_nomad_summary_print(x)
+    if (!is.null(x$cv.elapsed) && is.finite(x$cv.elapsed))
+      cat(paste("\nCross-validation time: ", formatC(x$cv.elapsed,digits=1,format="f"), " seconds",sep=""))
     cat("\n\n")
   } else if(!is.null(x$I)) {
     cat("\nFactor Regression Spline Cross-Validation",sep="")
@@ -85,6 +131,9 @@ print.crscv <- function(x, ...){
     cat(paste("\n\nMaximum spline degree for search: ",format(x$degree.max),sep=""),sep="")
     cat(paste("\nBasis: ", x$basis,sep=""))
     if(!is.null(x$restarts) && (x$restarts > 0)) cat(paste("\nNumber of restarts = ", format(x$restarts),sep=""),sep="")
+    .crs_nomad_summary_print(x)
+    if (!is.null(x$cv.elapsed) && is.finite(x$cv.elapsed))
+      cat(paste("\nCross-validation time: ", formatC(x$cv.elapsed,digits=1,format="f"), " seconds",sep=""))
     cat("\n\n")
   } else {
     cat("\nRegression Spline Cross-Validation",sep="")
@@ -104,6 +153,9 @@ print.crscv <- function(x, ...){
     cat(paste("\n\nMaximum spline degree for search: ",format(x$degree.max),sep=""),sep="")
     cat(paste("\nBasis: ", x$basis,sep=""))
     if(!is.null(x$restarts) && (x$restarts > 0)) cat(paste("\nNumber of restarts = ", format(x$restarts),sep=""),sep="")
+    .crs_nomad_summary_print(x)
+    if (!is.null(x$cv.elapsed) && is.finite(x$cv.elapsed))
+      cat(paste("\nCross-validation time: ", formatC(x$cv.elapsed,digits=1,format="f"), " seconds",sep=""))
     cat("\n\n")
   }
 }

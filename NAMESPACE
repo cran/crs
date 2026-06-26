@@ -5,6 +5,9 @@ importFrom("utils", "flush.console")
 import(stats, boot, quantreg)
 export(clsd,
        crs,
+       crshat,
+       crs_boot_control,
+       crs_grid_control,
        crsiv,
        crsivderiv,
        crssigtest,
@@ -41,6 +44,8 @@ S3method(print, crs)
 S3method(summary, crs)
 S3method(predict, crs)
 S3method(plot, crs)
+S3method(print, crshat)
+S3method(crshat, crs)
 
 S3method(print, crsiv)
 S3method(summary, crsiv)

@@ -333,6 +333,9 @@ clsd <- function(x=NULL,
     segments <- ls.ml.out$segments
     fv <- ls.ml.out$fv
 
+  } else {
+    ls.ml.out <- NULL
+
   }
 
   if(!is.null(xeval)) {
@@ -482,6 +485,22 @@ clsd <- function(x=NULL,
                       xq=quantile.vec,
                       tau=quantile.seq,
                       ptm=ptm)
+
+  if (!is.null(ls.ml.out) && !is.null(ls.ml.out$nomad.restart.contract)) {
+    clsd.return$nomad.restart.contract <- ls.ml.out$nomad.restart.contract
+  }
+  if (!is.null(ls.ml.out) && !is.null(ls.ml.out$nomad.best.restart)) {
+    clsd.return$nomad.best.restart <- ls.ml.out$nomad.best.restart
+  }
+  if (!is.null(ls.ml.out) && !is.null(ls.ml.out$nomad.restart.objectives)) {
+    clsd.return$nomad.restart.objectives <- ls.ml.out$nomad.restart.objectives
+  }
+  if (!is.null(ls.ml.out) && !is.null(ls.ml.out$nomad.restart.evaluations)) {
+    clsd.return$nomad.restart.evaluations <- ls.ml.out$nomad.restart.evaluations
+  }
+  if (!is.null(ls.ml.out) && !is.null(ls.ml.out$nomad.summary)) {
+    clsd.return$nomad.summary <- ls.ml.out$nomad.summary
+  }
 
   class(clsd.return) <- "clsd"
   return(clsd.return)
@@ -884,12 +903,12 @@ ls.ml <- function(x=NULL,
     }
 
     ## Initial values
-    x0 <- c(degree.min,segments.min)
+    x0 <- as.numeric(c(degree.min,segments.min))
     ## Types of variables
     bbin <-c(1, 1)
     ## Bounds
-    lb <- c(degree.min,segments.min)
-    ub <- c(degree.max,segments.max)
+    lb <- as.numeric(c(degree.min,segments.min))
+    ub <- as.numeric(c(degree.max,segments.max))
     ## Type of output
     bbout <- c(0, 2, 1)
     ## Options
@@ -919,17 +938,48 @@ ls.ml <- function(x=NULL,
 
     progress_note("Calling NOMAD (Nonsmooth Optimization by Mesh Adaptive Direct Search)")
 
-    solution <- snomadr(eval.f=eval.f,
-                        n=2,## number of variables
-                        x0=x0,
-                        bbin=bbin,
-                        bbout=bbout,
-                        lb=lb,
-                        ub=ub,
-                        nmulti=nmulti,
-                        display.nomad.progress=display.nomad.progress,
-                        opts=opts,
-                        params=params)
+    x0.starts <- if (as.integer(nmulti) > 1L) {
+      .crs_nomad_capture_start_matrix(
+        x0 = x0,
+        nstart = as.integer(nmulti),
+        bbin = bbin,
+        bbout = bbout,
+        lb = lb,
+        ub = ub,
+        random.seed = random.seed,
+        opts = opts
+      )
+    } else {
+      NULL
+    }
+
+    solution <- if (!is.null(x0.starts)) {
+      .crs_nomad_restart_sweep(eval.f=eval.f,
+                               n=2,## number of variables
+                               starts=x0.starts,
+                               bbin=bbin,
+                               bbout=bbout,
+                               lb=lb,
+                               ub=ub,
+                               random.seed=random.seed,
+                               opts=opts,
+                               display.nomad.progress=display.nomad.progress,
+                               params=params,
+                               use.cache=!isTRUE(display.nomad.progress))
+    } else {
+      snomadr(eval.f=eval.f,
+              n=2,## number of variables
+              x0=as.numeric(x0),
+              bbin=bbin,
+              bbout=bbout,
+              lb=lb,
+              ub=ub,
+              nmulti=nmulti,
+              random.seed=random.seed,
+              display.nomad.progress=display.nomad.progress,
+              opts=opts,
+              params=params)
+    }
 
     progress_note_end()
 
@@ -1039,7 +1089,16 @@ ls.ml <- function(x=NULL,
 
   .crs_restore_seed(seed.state)
 
-  return(list(degree=d.opt,segments=s.opt,beta=par.opt,fv=value.opt))
+  out <- list(degree=d.opt,segments=s.opt,beta=par.opt,fv=value.opt)
+  if (isTRUE(NOMAD) && exists("solution", inherits = FALSE)) {
+    out$nomad.restart.contract <- solution$restart.contract
+    out$nomad.best.restart <- solution$best.restart
+    out$nomad.restart.objectives <- solution$restart.fval
+    out$nomad.restart.evaluations <- solution$restart.results
+    out$nomad.summary <- .crs_nomad_summary_from_solution(solution)
+  }
+
+  return(out)
 
 }
 
@@ -1054,7 +1113,10 @@ summary.clsd <- function(object,
   cat(paste("\nTraining observations: ", format(object$nobs), sep=""))
   cat(paste("\nLog-likelihood: ", format(object$logl), sep=""))
   cat(paste("\nNumber of multistarts: ", format(object$nmulti), sep=""))
-  cat(paste("\nEstimation time: ", formatC(object$ptm[1],digits=1,format="f"), " seconds",sep=""))
+  .crs_nomad_summary_print(object)
+  est.elapsed <- .crs_elapsed_seconds(object$ptm)
+  if (is.finite(est.elapsed))
+    cat(paste("\nEstimation time: ", formatC(est.elapsed,digits=1,format="f"), " seconds",sep=""))
 
   cat("\n\n")
 
@@ -1075,55 +1137,19 @@ plot.clsd <- function(x,
                       type,
                       ...) {
 
-  if(missing(xlab)) xlab <- "Data"
-  if(missing(type)) type <- "l"
+  dots <- list(...)
+  if (!missing(ylim)) dots$ylim <- ylim
+  if (!missing(ylab)) dots$ylab <- ylab
+  if (!missing(xlab)) dots$xlab <- xlab
+  if (!missing(type)) dots$type <- type
 
-  if(!er) {
-    order.x <- order(x$x)
-    if(distribution){
-      y <- x$distribution[order.x]
-      if(missing(ylab)) ylab <- "Distribution"
-      if(missing(ylim)) ylim <- c(0,1)
-    }
-    if(!distribution && !derivative) {
-      y <- x$density[order.x]
-      if(missing(ylab)) ylab <- "Density"
-      if(missing(ylim)) ylim <- c(0,max(y))
-    }
-    if(derivative) {
-      y <- x$density.deriv[order.x]
-      if(missing(ylab)) ylab <- "Density Derivative"
-      if(missing(ylim)) ylim <- c(min(y),max(y))
-    }
-    x <- x$x[order.x]
-  } else {
-    order.xer <- order(x$xer)
-    if(distribution){
-      y <- x$distribution.er[order.xer]
-      if(missing(ylab)) ylab <- "Distribution"
-      if(missing(ylim)) ylim <- c(0,1)
-    }
-    if(!distribution && !derivative) {
-      y <- x$density.er[order.xer]
-      if(missing(ylab)) ylab <- "Density"
-      if(missing(ylim)) ylim <- c(0,max(y))
-    }
-    if(derivative){
-      y <- x$density.deriv.er[order.xer]
-      if(missing(ylab)) ylab <- "Density Derivative"
-      if(missing(ylim)) ylim <- c(min(y),max(y))
-    }
-    x <- x$xer[order.xer]
-  }
-
-  x <- plot(x,
-            y,
-            ylim=ylim,
-            ylab=ylab,
-            xlab=xlab,
-            type=type,
-            ...)
-
+  do.call(.crs_plot_clsd_public,
+          c(list(object = x,
+                 plot.call = as.list(match.call(expand.dots = FALSE)),
+                 er = er,
+                 distribution = distribution,
+                 derivative = derivative),
+            dots))
 }
 
 coef.clsd <- function(object, ...) {

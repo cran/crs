@@ -1,3 +1,88 @@
+# crs 0.15-45
+
+* Improved mixed-data cross-validation efficiency by using a guarded
+  weighted least-squares Gram/Cholesky solve with QR/SVD fallback for
+  kernel and factor spline CV routes. The change covers `cv.ls`, `cv.gcv`,
+  and `cv.aic` for additive, tensor, and GLP bases consistently across
+  weighted and unweighted mean-regression CV, while preserving the existing
+  rank, fallback, and objective contracts.
+
+* Restored the GLP model-matrix column oracle used to select generalized
+  local-polynomial interactions while retaining compiled column-product
+  construction, preserving GLP stability and shape compatibility.
+
+* Improved categorical-kernel mean fit and evaluation efficiency by reusing
+  the guarded weighted least-squares Gram/Cholesky primitive for the
+  non-quantile prediction ingredients when `model.return=FALSE`, covering
+  additive, tensor, and GLP bases consistently across weighted and
+  unweighted routes while preserving fitted values, intervals, standard
+  errors, hatvalues, rank, and residual degrees of freedom.
+
+* Improved categorical-kernel mean-gradient efficiency by reusing the same
+  guarded weighted least-squares Gram/Cholesky primitive for non-quantile
+  derivative solves in training and evaluation routes. The change covers
+  additive, tensor, and GLP bases consistently across weighted and unweighted
+  routes while preserving derivative estimates and normal-approximation
+  intervals to numerical roundoff.
+
+* Changed the public `crs.formula()` NOMAD evaluation-budget default
+  `max.bb.eval` to `NULL`, allowing `crs()` to choose route-specific
+  defaults after route selection. Continuous-only `frscvNOMAD` searches
+  now default to `max.bb.eval=10000`, while kernel/categorical
+  `krscvNOMAD` searches default to `max.bb.eval=1000`. These defaults
+  were set on the basis of simulation evidence and real-world
+  applications; explicit user-supplied values continue to override the
+  route defaults.
+
+* Repaired public-wrapper consistency so `crs()` forwards NOMAD search
+  controls to `frscvNOMAD` consistently with `krscvNOMAD`, including
+  `random.seed`, `max.bb.eval`, integer mesh/frame geometry controls,
+  and quantile level `tau`.
+
+* Made NOMAD multistart generation invariant to progress/display
+  settings in `frscvNOMAD` and `krscvNOMAD`, so enabling or suppressing
+  optimizer progress no longer changes the starting-value geometry or
+  fitted result.
+
+* Implemented independent native NOMAD restart sweeps for CRS
+  cross-validation searches, preserving the public multistart contract while
+  keeping restart diagnostics explicit.
+
+* Added public `max.eval` control for NOMAD point-lookup budgets and changed
+  continuous-only `frscvNOMAD` defaults so `MAX_EVAL` and `MAX_BB_EVAL` can be
+  controlled independently. The default point-lookup cap for continuous-only
+  CRS NOMAD searches is now 1000, reducing duplicate NOMAD cache lookups while
+  preserving the established black-box evaluation budget.
+
+* Clarified NOMAD cache reporting in summaries. User-facing output now
+  distinguishes true objective/function evaluations from repeated NOMAD point
+  lookups avoided by the native cache.
+
+* Added elapsed-time recording and reporting for CRS cross-validation and
+  summary paths using wall-clock elapsed time rather than user CPU time.
+
+* Modernized CRS plot methods toward the current `np` plot interface.
+  `plot.crs()` now displays fitted mean/quantile functions by default,
+  accepts NP-style controls such as `errors`, `band`, `B`, `output`,
+  `data_overlay`, `data_rug`, `perspective`, `renderer`, and `view`, and
+  supports transparent viridis base surfaces, base rotation, rgl surface
+  extras, data overlays, rugs, and fitted-surface asymptotic/inid-bootstrap
+  intervals. Legacy CRS plot switches such as `ci`, `mean`, `plot.rug`,
+  and `plot.errors.*` now fail fast with NP-interface guidance.
+
+* Hardened CRS plot argument validation and public plot contracts. Unsupported
+  controls now fail explicitly rather than being silently ignored, categorical
+  plot rendering and legends are aligned more closely with `np`, and CRS
+  gradient plots now support refit and wild-bootstrap intervals where defined.
+
+* Repaired explicit derivative handling in `predict.crs()` so caller-supplied
+  derivative orders are honored rather than bypassed by the fitted-object fast
+  path.
+
+* Expanded the `crs_nomad_api` help page with package-author guidance,
+  direct C-callback and R-callback bridge skeletons, and explanations of the
+  most important native result fields.
+
 # crs 0.15-44
 
 * Added the final package-author native NOMAD C API

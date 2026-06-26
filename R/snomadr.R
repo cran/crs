@@ -117,6 +117,124 @@ merge.nomad4.kr.defaults <- function(opts) {
   opts
 }
 
+.crs_nomad_option_value <- function(opts, key) {
+  opt.names <- names(opts)
+  if (is.null(opt.names))
+    return(NULL)
+  key <- toupper(key)
+  opt.index <- which(toupper(opt.names) == key)
+  if (!length(opt.index))
+    return(NULL)
+  opts[[opt.index[1L]]]
+}
+
+.crs_nomad_has_option <- function(opts, key) {
+  !is.null(.crs_nomad_option_value(opts, key))
+}
+
+.crs_nomad_option_text <- function(x) {
+  if (is.null(x)) return(NULL)
+  paste(as.character(x), collapse = " ")
+}
+
+.crs_nomad_apply_eval_budget <- function(opts,
+                                         max.bb.eval = NULL,
+                                         max.eval = NULL,
+                                         default.max.eval = NULL,
+                                         context = "NOMAD") {
+  if (!.crs_nomad_has_option(opts, "MAX_BB_EVAL") && !is.null(max.bb.eval))
+    opts$"MAX_BB_EVAL" <- max.bb.eval
+
+  if (!is.null(max.eval)) {
+    old <- .crs_nomad_option_value(opts, "MAX_EVAL")
+    if (!is.null(old) &&
+        !identical(.crs_nomad_option_text(old),
+                   .crs_nomad_option_text(max.eval))) {
+      stop(paste0(
+        context,
+        " received conflicting MAX_EVAL controls; use either max.eval or ",
+        "opts$MAX_EVAL, not both with different values"
+      ), call. = FALSE)
+    }
+    opts$"MAX_EVAL" <- max.eval
+  } else if (!.crs_nomad_has_option(opts, "MAX_EVAL") &&
+             !is.null(default.max.eval)) {
+    opts$"MAX_EVAL" <- default.max.eval
+  } else if (!.crs_nomad_has_option(opts, "MAX_EVAL")) {
+    max.bb <- .crs_nomad_option_value(opts, "MAX_BB_EVAL")
+    max.bb.num <- suppressWarnings(as.numeric(max.bb))
+    if (length(max.bb.num) == 1L && is.finite(max.bb.num) && max.bb.num > 0)
+      opts$"MAX_EVAL" <- max.bb
+  }
+
+  opts
+}
+
+.crs_nomad_effective_options <- function(opts) {
+  keys <- c("MAX_BB_EVAL",
+            "MAX_EVAL",
+            "DIRECTION_TYPE",
+            "EVAL_QUEUE_SORT",
+            "EVAL_OPPORTUNISTIC",
+            "SPECULATIVE_SEARCH",
+            "SIMPLE_LINE_SEARCH",
+            "QUAD_MODEL_SEARCH",
+            "SGTELIB_MODEL_SEARCH",
+            "NM_SEARCH",
+            "INITIAL_MESH_SIZE",
+            "MIN_MESH_SIZE",
+            "MIN_FRAME_SIZE",
+            "INITIAL_FRAME_SIZE")
+
+  out <- list()
+  for (key in keys) {
+    value <- .crs_nomad_option_value(opts, key)
+    if (!is.null(value))
+      out[[key]] <- value
+  }
+  out
+}
+
+.crs_nomad_attach_effective_options <- function(summary, opts) {
+  if (is.null(summary)) return(NULL)
+  summary$effective.options <- .crs_nomad_effective_options(opts)
+  summary
+}
+
+.crs_nomad_display_degree <- function(opts) {
+  value <- .crs_nomad_option_value(opts, "DISPLAY_DEGREE")
+  if (is.null(value) || length(value) != 1L)
+    return(NULL)
+  value <- suppressWarnings(as.integer(value))
+  if (is.na(value))
+    return(NULL)
+  value
+}
+
+.crs_nomad_stop_unsafe_display_degree <- function(display.degree) {
+  message <- paste(
+    "NOMAD option DISPLAY_DEGREE >= 3 is currently unsafe in the embedded",
+    "snomadr() route because NOMAD4's native output queue can abort the R",
+    "session after repeated solves. Use DISPLAY_DEGREE 0, 1, or 2; keep the",
+    "default crs single-line progress display for routine fits.",
+    sep = " "
+  )
+  condition <- structure(
+    list(message = message,
+         call = NULL,
+         display.degree = display.degree),
+    class = c("crs_error_nomad_display_degree", "error", "condition")
+  )
+  stop(condition)
+}
+
+.crs_nomad_check_display_degree <- function(opts) {
+  display.degree <- .crs_nomad_display_degree(opts)
+  if (!is.null(display.degree) && display.degree >= 3L)
+    .crs_nomad_stop_unsafe_display_degree(display.degree)
+  invisible(opts)
+}
+
 snomadr <-
   function( eval.f,
             n,
@@ -174,6 +292,7 @@ snomadr <-
     if(missing(nmulti)||nmulti < 0) nmulti <- 0
     if(missing(display.nomad.progress)) display.nomad.progress <- TRUE
     opts <- merge.nomad4.mads.defaults(opts)
+    .crs_nomad_check_display_degree(opts)
 
     ## Define 'continuous' to types of variables
     if (is.null(bbin) ) { bbin <- rep (0, n)}

@@ -55,13 +55,14 @@ crs(\dots)
     lambda = NULL,
     lambda.discrete = FALSE,
     lambda.discrete.num = 100,
-    max.bb.eval = 140,
+    max.bb.eval = NULL,
+    max.eval = NULL,
     min.mesh.size.integer = 1,
     min.mesh.size.real = paste(sqrt(.Machine$double.eps)),
     min.frame.size.integer = 1,
     min.frame.size.real = 1,
     model.return = FALSE,
-    nmulti = 5,
+    nmulti = 2,
     opts=list(),
     prune = FALSE,
     random.seed = 42,
@@ -208,19 +209,21 @@ These arguments control cross-validation objective selection and restart behavio
     cross-validation }
 
 
-\item{cv.threshold}{ an integer (default \code{cv.threshold=1000}) for
-  simple problems with no categorical predictors
-  (i.e. \code{kernel=FALSE} otherwise
-  \code{\link{optim}}/\code{\link{snomadr}} search is necessary) such
-  that, if the number of combinations of \code{degree}/\code{segments}
-  is less than the threshold and \code{cv="nomad"}, instead use
-  exhaustive search (\code{cv="exhaustive"}) }
+\item{cv.threshold}{ an integer (default \code{cv.threshold=1000}) that
+  controls the automatic switch from NOMAD to exhaustive search for
+  simple problems with no categorical predictors. If \code{cv="nomad"}
+  and the number of \code{degree}/\code{segments} combinations is less
+  than or equal to \code{cv.threshold}, \code{crs} quietly uses
+  \code{cv="exhaustive"} because enumeration is cheap and deterministic.
+  Set \code{cv.threshold=0} to disable this automatic switch and keep
+  \code{cv="nomad"} on the NOMAD path. Use \code{cv="exhaustive"} to
+  request exhaustive search explicitly. }
 
 
   \item{nmulti}{
     integer number of times to restart the process of finding extrema of
     the cross-validation function from different (random) initial
-    points (default \code{nmulti=5})
+    points (default \code{nmulti=2})
   }
 
 
@@ -265,9 +268,27 @@ These arguments control NOMAD mesh settings and optional solver controls.
 
 
   \item{max.bb.eval}{
-    argument passed to the NOMAD solver (default
-    \code{max.bb.eval=140}; see \code{\link{snomadr}} for further
-    details)
+    argument passed to the NOMAD solver. The default \code{NULL} lets
+    \code{crs} choose a route-specific evaluation budget:
+    \code{10000} for continuous-only \code{\link{frscvNOMAD}} search and
+    \code{1000} for kernel/categorical \code{\link{krscvNOMAD}} search.
+    These defaults were set on the basis of simulation evidence and
+    real-world applications. User-supplied values are passed through to
+    the selected NOMAD route; see \code{\link{snomadr}} for further
+    details.
+  }
+
+  \item{max.eval}{
+    optional NOMAD total point-lookup budget. This is distinct from
+    \code{max.bb.eval}: \code{max.bb.eval} limits true blackbox objective
+    computations, while \code{max.eval} limits total NOMAD point lookups,
+    including cache hits. The default \code{NULL} uses the selected route's
+    default \code{MAX_EVAL}: continuous-only NOMAD search uses
+    \code{MAX_EVAL = 1000}, while mixed/kernel NOMAD search retains the
+    historical route behavior of using \code{MAX_BB_EVAL} as
+    \code{MAX_EVAL}. If supplied, \code{max.eval} is passed to NOMAD as
+    \code{MAX_EVAL}. Supplying both \code{max.eval} and
+    \code{opts$MAX_EVAL} with conflicting values is an error.
   }
 
 
@@ -309,7 +330,10 @@ These arguments control derivative extraction, quantile level, and observation w
   categorical predictor) or not and if so what order. Note that if
   \code{deriv} is higher than the spline degree of the associated
   continuous predictor then the derivative will be zero and a warning
-  issued to this effect }
+  issued to this effect. For \code{predict.crs()}, an explicitly supplied
+  \code{deriv=} overrides the value stored on the fitted object; when
+  \code{deriv} is omitted, prediction preserves the fitted object's
+  derivative setting. }
 
 
   \item{tau}{
@@ -379,11 +403,11 @@ Further optional arguments are passed through to lower-level routines.
 
     ## Plot the mean and (asymptotic) error bounds
 
-    plot(model,mean=TRUE,ci=TRUE)
+    plot(model,errors = "asymptotic")
 
     ## Plot the first partial derivative and (asymptotic) error bounds
 
-    plot(model,deriv=1,ci=TRUE)
+    plot(model,gradients = TRUE,errors = "asymptotic")
     }
 
   \code{crs} computes a regression spline estimate of a one (1)
@@ -431,15 +455,17 @@ Further optional arguments are passed through to lower-level routines.
   value of \code{degree.max} (or \code{segments.max}).
 
   Note that the default \code{plot} method for a \code{crs} object
-  provides some diagnostic measures, in particular, a) residuals versus
-  fitted values (useful for checking the assumption that
-  \code{E(u|x)=0}), b) a normal quantile-quantile plot which allows
-  residuals to be assessed for normality (\code{\link{qqnorm}}), c) a
-  scale-location plot that is useful for checking the assumption that
-  the errors are iid and, in particular, that the variance is
-  homogeneous, and d) \sQuote{Cook's distance} which computes the
-  single-case influence function. See below for other arguments for the
-  plot function for a \code{crs} object.
+  displays the fitted conditional mean or conditional quantile surface.
+  One-dimensional partial fitted curves are drawn by default; for two
+  continuous predictors, \code{perspective=TRUE} requests a
+  two-dimensional surface and \code{renderer="rgl"} requests the rgl
+  renderer. Surface displays use transparent viridis coloring, NP-style
+  rotation controls via \code{view}, and optional data overlays/rugs via
+  \code{data_overlay} and \code{data_rug}. Gradient displays are requested with
+  \code{gradients=TRUE}; higher-order derivatives use
+  \code{gradient_order=i}. Intervals are controlled by the modern
+  \pkg{np}-style \code{errors}, \code{band}, \code{alpha},
+  \code{bootstrap}, and \code{B} arguments.
 
   Note that setting \code{prune=TRUE} produces a final \sQuote{pruning}
   of the model via a stepwise cross-validation criterion achieved by
@@ -460,14 +486,18 @@ Further optional arguments are passed through to lower-level routines.
     \code{\link{fitted}} and \code{\link{residuals}} extract (or
     generate) estimated values and residuals. Furthermore, the functions
     \code{\link{summary}}, \code{\link{predict}}, and \code{\link{plot}}
-    (options \code{mean=FALSE}, \code{deriv=i} where \eqn{i} is an
-    integer, \code{ci=FALSE}, \code{persp.rgl=FALSE},
-    \code{plot.behavior=c("plot","plot-data","data")},
-    \code{plot.errors.method=c("asymptotic","bootstrap")},
-    \code{plot.errors.boot.num=99},
-    \code{plot.errors.type=c("standard","pointwise","bonferroni","simultaneous","all")},
-    \code{plot.errors.alpha=0.05},
-    \code{xtrim=0.0},\code{xq=0.5}) support objects of this type. The
+	    support objects of this type. The \code{\link{plot.crs}} method follows the
+    modern \pkg{np} plotting interface, including
+    \code{errors=c("none","asymptotic","bootstrap")},
+    \code{gradients=TRUE}, \code{gradient_order},
+    \code{output=c("plot","data","plot-data","both")},
+    \code{perspective}, \code{renderer}, \code{view}, \code{neval},
+    \code{band}, \code{alpha}, \code{bootstrap}, \code{B}, and the
+    control helpers documented in \code{\link{plot.crs}}.
+    \code{predict.crs()} honors explicit \code{deriv=} requests for new
+    evaluation data and, when \code{newdata} is omitted, computes explicit
+    derivative requests at the training data; ordinary \code{predict(object)}
+    calls retain the stored fitted-value behavior. The
     returned object has the following components:
 
   \item{fitted.values}{ estimates of the regression function
@@ -477,9 +507,21 @@ Further optional arguments are passed through to lower-level routines.
   the \code{fitted.values} (conditional mean) obtained from
   \code{\link{predict.lm}} via the argument
   \code{interval="confidence"}. When plotting with
-  \code{plot.errors.method="bootstrap"}, bootstrap-based bounds are used
-  instead for mean plots. Bootstrap derivative bounds in
-  \code{plot.crs} currently fall back to asymptotic bounds.}
+  \code{errors = "bootstrap"}, bootstrap-based bounds are used
+  instead for mean plots, including one-dimensional fitted curves and
+  two-dimensional fitted surfaces. Mean-regression plots default to the
+  fast fixed-design wild bootstrap (\code{bootstrap="wild"},
+  \code{B=1999}) following the modern \pkg{np} interface; the legacy
+  refit bootstrap remains available with \code{bootstrap="inid"}, and
+  \pkg{np}-style block refit bootstraps are available with
+  \code{bootstrap="fixed"} and \code{bootstrap="geom"}. Quantile CRS
+  plots fit with \code{tau} follow the \pkg{npqreg} convention and
+  default to the refit \code{bootstrap="inid"} selector; \code{fixed}
+  and \code{geom} are available for quantile fitted curves, while
+  \code{wild} remains mean-only. Mean CRS gradient/effect plots requested with
+  \code{gradients=TRUE} also support bootstrap derivative/effect intervals;
+  numeric continuous panels use the corresponding \code{crshat()} derivative
+  operator, and categorical panels use focal-minus-baseline effect operators.}
 
   \item{residuals}{ residuals computed at the sample points or
   evaluation points }
@@ -499,6 +541,10 @@ Further optional arguments are passed through to lower-level routines.
   used (\code{kernel=TRUE}) or not }
 
   \item{lambda}{ vector of bandwidths used if \code{kernel=TRUE}}
+
+  \item{nomad.summary}{ summary of NOMAD blackbox evaluations, cache
+    activity, and effective NOMAD options, present only when NOMAD search
+    was used}
 
   \item{call}{ a symbolic description of the model  }
 
@@ -626,28 +672,36 @@ newdata <- data.frame(x1=x.grid[,1],x2=x.grid[,2],
                       z=factor(rep(0,num.eval**2),levels=c(0,1)))
 z0 <- matrix(predict(model,newdata=newdata),num.eval,num.eval)
 newdata <- data.frame(x1=x.grid[,1],x2=x.grid[,2],
-                      z=factor(rep(1,num.eval),levels=c(0,1)))
+                      z=factor(rep(1,num.eval**2),levels=c(0,1)))
 z1 <- matrix(predict(model,newdata=newdata),num.eval,num.eval)
 zlim=c(min(z0,z1),max(z0,z1))
 persp(x=x1.seq,y=x2.seq,z=z0,
       xlab="x1",ylab="x2",zlab="y",zlim=zlim,
+      col=grDevices::adjustcolor("red",alpha.f=0.35),
+      border=grDevices::adjustcolor("red",alpha.f=0.60),
       ticktype="detailed",
-      border="red",
       theta=45,phi=45)
 par(new=TRUE)
 persp(x=x1.seq,y=x2.seq,z=z1,
       xlab="x1",ylab="x2",zlab="y",zlim=zlim,
+      col=grDevices::adjustcolor("blue",alpha.f=0.35),
+      border=grDevices::adjustcolor("blue",alpha.f=0.60),
       theta=45,phi=45,
-      ticktype="detailed",
-      border="blue")
+      ticktype="detailed")
 
 ## Partial regression surface plot
-plot(model,mean=TRUE,ci=TRUE)
+plot(model,errors = "asymptotic")
+## NP-style data overlay and support rug
+plot(model,data_rug=TRUE)
+## For two continuous predictors, surface intervals are available through the
+## same errors interface
+## plot(crs(y~x1+x2,cv="none"),perspective=TRUE,errors="bootstrap",B=99)
+## plot(crs(y~x1+x2,cv="none"),perspective=TRUE,renderer="rgl",data_rug=TRUE)
 \dontrun{
 ## A plot example where we extract the partial surfaces, confidence
-## intervals etc. automatically generated by plot(mean=TRUE,...) but do
+## intervals etc. automatically generated by plot(...) but do
 ## not plot, rather save for separate use.
-pdat <- plot(model,mean=TRUE,ci=TRUE,plot.behavior="data")
+pdat <- plot(model,errors = "asymptotic",output ="data")
 
 ## Column 1 is the (evaluation) predictor ([,1]), 2-4 ([,-1]) the mean,
 ## lwr, and upr (note the returned value is a 'list' hence pdat[[1]] is

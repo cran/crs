@@ -252,7 +252,7 @@ Further NOMAD and CRS controls are passed through to lower-level routines.
   iteration. However, if local rather than global optima are encountered
   the resulting estimates can be overly noisy. To best guard against
   this eventuality set \code{nmulti} to a larger number than the default
-  \code{nmulti=5} for \code{\link{crs}} when using \code{cv="nomad"} or
+  \code{nmulti=2} for \code{\link{crs}} when using \code{cv="nomad"} or
   instead use \code{cv="exhaustive"} if possible (this may not be
   feasible for non-trivial problems). 
 
@@ -265,7 +265,7 @@ Further NOMAD and CRS controls are passed through to lower-level routines.
   optimal parameters serve as the first of the multiple initial points
   (a warm start), while any remaining restarts are cold starts. If
   \code{nmulti} is not explicitly supplied by the user, it defaults to
-  the \code{\link{crs}} default (5) for the first iteration and to 1 for
+  the \code{\link{crs}} default (2) for the first iteration and to 1 for
   all subsequent iterations. This strategy provides a balance between
   computational efficiency and robustness, allowing the NOMAD solver to
   refine the structural parameters as the residuals evolve
@@ -303,15 +303,21 @@ Further NOMAD and CRS controls are passed through to lower-level routines.
     \code{\link{plot}} support objects of this type.
 
     For the \code{\link{plot}} function, the options include
-    \code{plot.data=FALSE} (a logical value indicating whether to plot
-    the data as a scatter plot), \code{deriv=FALSE} (a logical value
-    indicating whether to plot the derivative of the structural function
-    rather than the function itself), \code{ci=FALSE} (a logical value
-    indicating whether to overlay derivative confidence bounds when
-    available), and \code{xtrim=0.0} (a scalar in \code{[0,0.5)} used to
-    trim the plotted support of \eqn{z} by quantiles). Note that the
-    \code{\link{plot}} method for \code{crsiv} objects currently only
-    supports univariate endogenous predictors \eqn{z}.
+    \code{plot.data=FALSE} or \code{data_overlay=FALSE} (logical values
+    indicating whether to plot the data as a scatter plot),
+    \code{deriv=FALSE} (a logical value indicating whether to plot the
+    derivative of the structural function rather than the function
+    itself), \code{errors=c("none","asymptotic")} (asymptotic derivative
+    confidence bounds when available), \code{output=c("plot","data",
+    "plot-data")} or \code{behavior} (whether to draw, return the plot
+    data, or both), and \code{xtrim=0.0} (a scalar in \code{[0,0.5)}
+    used to trim the plotted support of \eqn{z} by quantiles). Bootstrap,
+    surface-rendering, rug, legend, and regression-gradient plot
+    controls are not supported for this curve route and fail fast when
+    supplied. See \code{\link{plot.crs}} for the shared CRS plot-output and
+    data-overlay conventions. Note that the \code{\link{plot}} method for
+    \code{crsiv} objects currently only supports univariate endogenous
+    predictors \eqn{z}.
     
     See \code{\link{crs}} for details on the return object components.
 
@@ -366,7 +372,7 @@ This function should be considered to be in \sQuote{beta test} status until furt
 }
 
 \seealso{
-\code{npreg}, \code{\link{crs}}
+\code{npreg}, \code{\link{crs}}, \code{\link{plot.crs}}
 }
 \examples{
 \dontrun{

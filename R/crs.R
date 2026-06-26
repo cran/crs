@@ -29,6 +29,7 @@ crs <- function(...) UseMethod("crs")
     "lambda.discrete",
     "lambda.discrete.num",
     "max.bb.eval",
+    "max.eval",
     "min.mesh.size.integer",
     "min.mesh.size.real",
     "min.frame.size.integer",
@@ -531,13 +532,14 @@ crs.formula <- function(formula,
                         lambda=NULL,
                         lambda.discrete=FALSE,
                         lambda.discrete.num=100,
-                        max.bb.eval=140,
+                        max.bb.eval=NULL,
+                        max.eval=NULL,
                         min.mesh.size.integer=1,
                         min.mesh.size.real=paste(sqrt(.Machine$double.eps)),
                         min.frame.size.integer=1,
                         min.frame.size.real=1,
                         model.return=FALSE,
-                        nmulti=5,
+                        nmulti=2,
                         opts=list(),
                         prune=FALSE,
                         random.seed=42,
@@ -551,6 +553,7 @@ crs.formula <- function(formula,
                         ...) {
 
   ptm.start <- proc.time()
+  opts.supplied <- !missing(opts)
   cv <- match.arg(cv)
   cv.func <- match.arg(cv.func)
   complexity <- match.arg(complexity)
@@ -570,6 +573,7 @@ crs.formula <- function(formula,
   ## is not provided
 
   if(!isTRUE(getOption("crs.messages")) && is.null(opts[["DISPLAY_DEGREE"]])) opts$"DISPLAY_DEGREE"=0
+  opts.nomad <- if(opts.supplied) opts else list()
 
   ## If a weights vector is provided and there exists missing data
   ## then the weight vector must be parsed to contain weights
@@ -599,11 +603,10 @@ crs.formula <- function(formula,
     include <- NULL
   }
 
-  ## Check for dynamic cv and if number of combinations is not overly
-  ## large use exhaustive search
+  ## For simple non-categorical searches, exhaustive enumeration is cheap and
+  ## deterministic. See ?crs, cv.threshold for the override contract.
 
   if(cv=="nomad" && is.null(num.z) && ((degree.max-degree.min)*(segments.max-segments.min))**num.x <= cv.threshold) {
-    if(display.warnings) warning(" Dynamically changing search from nomad to exhaustive (if unwanted set cv.threshold to 0)")
     cv <- "exhaustive"
   }
 
@@ -677,6 +680,7 @@ crs.formula <- function(formula,
   if(!is.logical(singular.ok)) stop("singular.ok must be logical (TRUE/FALSE)")
 
   cv.min <- NULL
+  cv.return <- NULL
   cv.maxPenalty <- resolve_cv_maxPenalty(NULL, y, weights = weights, cv.func = cv.func)
 
   if(!kernel) {
@@ -684,6 +688,8 @@ crs.formula <- function(formula,
     ## indicator bases and B-spline bases cross-validation
 
     if(cv=="nomad") {
+
+      max.bb.eval.fr <- if(is.null(max.bb.eval)) 10000 else max.bb.eval
 
       cv.return <- frscvNOMAD(xz=xz,
                                y=y,
@@ -698,7 +704,15 @@ crs.formula <- function(formula,
                                cv.func=cv.func,
                                degree=degree,
                                segments=segments,
+                               random.seed=random.seed,
+                               max.bb.eval=max.bb.eval.fr,
+                               max.eval=max.eval,
+                               initial.mesh.size.integer=initial.mesh.size.integer,
+                               min.mesh.size.integer=min.mesh.size.integer,
+                               min.frame.size.integer=min.frame.size.integer,
                                nmulti=nmulti,
+                               opts=opts.nomad,
+                               tau=tau,
                                weights=weights,
                                singular.ok=singular.ok,
                                display.nomad.progress=display.nomad.progress,
@@ -745,6 +759,8 @@ crs.formula <- function(formula,
 
     if(cv=="nomad") {
 
+      max.bb.eval.kr <- if(is.null(max.bb.eval)) 1000 else max.bb.eval
+
       cv.return <- krscvNOMAD(xz=xz,
                                y=y,
                                degree.max=degree.max,
@@ -762,7 +778,8 @@ crs.formula <- function(formula,
                                lambda.discrete=lambda.discrete,
                                lambda.discrete.num=lambda.discrete.num,
                                random.seed=random.seed,
-                               max.bb.eval=max.bb.eval,
+                               max.bb.eval=max.bb.eval.kr,
+                               max.eval=max.eval,
                                initial.mesh.size.real=initial.mesh.size.real,
                                initial.mesh.size.integer=initial.mesh.size.integer,
                                min.mesh.size.real=min.mesh.size.real,
@@ -770,6 +787,7 @@ crs.formula <- function(formula,
                                min.frame.size.real=min.frame.size.real,
                                min.frame.size.integer=min.frame.size.integer,
                                nmulti=nmulti,
+                               opts=opts.nomad,
                                tau=tau,
                                weights=weights,
                                singular.ok=singular.ok,
@@ -851,8 +869,45 @@ crs.formula <- function(formula,
   est$restarts <- restarts
   est$ptm <- proc.time() - ptm.start
   est$nmulti <- nmulti
+  if (!is.null(cv.return) && !is.null(cv.return$nomad.restart.contract)) {
+    est$nomad.restart.contract <- cv.return$nomad.restart.contract
+  }
+  if (!is.null(cv.return) && !is.null(cv.return$nomad.best.restart)) {
+    est$nomad.best.restart <- cv.return$nomad.best.restart
+  }
+  if (!is.null(cv.return) && !is.null(cv.return$nomad.restart.objectives)) {
+    est$nomad.restart.objectives <- cv.return$nomad.restart.objectives
+  }
+  if (!is.null(cv.return) && !is.null(cv.return$nomad.restart.evaluations)) {
+    est$nomad.restart.evaluations <- cv.return$nomad.restart.evaluations
+  }
+  est <- .crs_nomad_attach_summary(est, cv.return)
 
   return(est)
+
+}
+
+.crs_predict_deriv_order <- function(object,
+                                     deriv,
+                                     deriv.supplied) {
+
+  if(!isTRUE(deriv.supplied)) {
+    deriv <- object$deriv
+    if(is.null(deriv) || length(deriv) == 0L) {
+      deriv <- 0L
+    }
+  }
+
+  if(!is.numeric(deriv) ||
+     length(deriv) != 1L ||
+     is.na(deriv) ||
+     !is.finite(deriv) ||
+     deriv < 0 ||
+     abs(deriv - round(deriv)) > sqrt(.Machine$double.eps)) {
+    stop("deriv must be a non-negative integer scalar", call. = FALSE)
+  }
+
+  as.integer(round(deriv))
 
 }
 
@@ -863,7 +918,9 @@ predict.crs <- function(object,
                         deriv=0,
                         ...) {
 
-  if(is.null(newdata)) {
+  deriv.supplied <- !missing(deriv)
+
+  if(is.null(newdata) && !isTRUE(deriv.supplied)) {
 
     ## If no new data provided, return sample fit.
     fitted.values <- fitted(object)
@@ -876,11 +933,17 @@ predict.crs <- function(object,
 
   } else{
 
+    if(is.null(newdata)) {
+      newdata <- object$xz
+    }
+
     ## Get training data from object (xz and y) and parse into factors
     ## and numeric.
 
     basis <- object$basis
-    deriv <- object$deriv
+    deriv <- .crs_predict_deriv_order(object=object,
+                                      deriv=deriv,
+                                      deriv.supplied=deriv.supplied)
     prune <- object$prune
     prune.index <- object$prune.index
     tau <- object$tau
@@ -942,7 +1005,8 @@ predict.crs <- function(object,
                                 prune=prune,
                                 prune.index=prune.index,
                                 tau=tau,
-                                weights=weights)$fitted.values
+                                weights=weights,
+                                fast.predict.only=TRUE)$fitted.values
 
       fitted.values <- tmp[,1]
       lwr <- tmp[,2]
@@ -1226,84 +1290,275 @@ summary.crs <- function(object,
     if(!is.null(object$cv.score)) cat(paste("\n\nCross-validation score (weighted): ", format(object$cv.score,digits=8), sep=""))
   }
 
-  if(object$cv != "none") cat(paste("\nNumber of multistarts: ", format(object$nmulti), sep=""))
+  if(object$cv != "none") {
+    cat(paste("\nSearch method: ", format(object$cv), sep=""))
+    if(identical(object$cv, "nomad"))
+      cat(paste("\nNumber of multistarts: ", format(object$nmulti), sep=""))
+    .crs_nomad_summary_print(object)
+  }
 
   if(sigtest && !object$kernel) {
     cat("\n\nPredictor significance test:\n")
     crs.sigtest(object)
   }
 
-  cat(paste("\nEstimation time: ", formatC(object$ptm[1],digits=1,format="f"), " seconds",sep=""))
+  est.elapsed <- .crs_elapsed_seconds(object$ptm)
+  if (is.finite(est.elapsed))
+    cat(paste("\nEstimation time: ", formatC(est.elapsed,digits=1,format="f"), " seconds",sep=""))
 
   cat("\n\n")
 
 }
 
-.crs.SCSrank <- function(x, conf.level = 0.95, alternative = "two.sided") {
+.crs.SCSrank <- function(x,
+                         conf.level = 0.95,
+                         alternative = "two.sided",
+                         progress_tick = NULL,
+                         progress_offset = 0L) {
   alternative <- match.arg(alternative, choices = c("two.sided", "less", "greater"))
   DataMatrix <- x
   N <- nrow(DataMatrix)
+  K <- ncol(DataMatrix)
   k <- round(conf.level * N, 0)
-  RankDat <- apply(DataMatrix, 2, rank)
+
+  row.max <- rep.int(-Inf, N)
+  row.min <- rep.int(Inf, N)
+  for(j in seq_len(K)) {
+    ranks.j <- rank(DataMatrix[, j])
+    row.max <- pmax(row.max, ranks.j)
+    row.min <- pmin(row.min, ranks.j)
+    if(is.function(progress_tick)) progress_tick(progress_offset + j)
+  }
+
+  SCS <- matrix(NA_real_, nrow = K, ncol = 2L)
   switch(alternative,
          "two.sided" = {
-           W1 <- apply(RankDat, 1, max)
-           W2 <- N + 1 - apply(RankDat, 1, min)
-           Wmat <- cbind(W1, W2)
-           w <- apply(Wmat, 1, max)
-           tstar <- round(sort(w)[k], 0)
-           SCI <- function(x) {
-             sortx <- sort(x)
-             cbind(sortx[N + 1 - tstar], sortx[tstar])
+           tstar <- round(sort.int(pmax(row.max, N + 1 - row.min))[k], 0)
+           lower.idx <- N + 1 - tstar
+           upper.idx <- tstar
+           for(j in seq_len(K)) {
+             sortx <- sort.int(DataMatrix[, j])
+             SCS[j, ] <- c(sortx[lower.idx], sortx[upper.idx])
+             if(is.function(progress_tick)) progress_tick(progress_offset + K + j)
            }
-           SCS <- t(apply(DataMatrix, 2, SCI))
          },
          "less" = {
-           W1 <- apply(RankDat, 1, max)
-           tstar <- round(sort(W1)[k], 0)
-           SCI <- function(x) {
-             sortx <- sort(x)
-             cbind(-Inf, sortx[tstar])
+           tstar <- round(sort.int(row.max)[k], 0)
+           for(j in seq_len(K)) {
+             sortx <- sort.int(DataMatrix[, j])
+             SCS[j, ] <- c(-Inf, sortx[tstar])
+             if(is.function(progress_tick)) progress_tick(progress_offset + K + j)
            }
-           SCS <- t(apply(DataMatrix, 2, SCI))
          },
          "greater" = {
-           W2 <- N + 1 - apply(RankDat, 1, min)
-           tstar <- round(sort(W2)[k], 0)
-           SCI <- function(x) {
-             sortx <- sort(x)
-             cbind(sortx[N + 1 - tstar], Inf)
+           tstar <- round(sort.int(N + 1 - row.min)[k], 0)
+           lower.idx <- N + 1 - tstar
+           for(j in seq_len(K)) {
+             sortx <- sort.int(DataMatrix[, j])
+             SCS[j, ] <- c(sortx[lower.idx], Inf)
+             if(is.function(progress_tick)) progress_tick(progress_offset + K + j)
            }
-           SCS <- t(apply(DataMatrix, 2, SCI))
          })
   colnames(SCS) <- c("lower", "upper")
   list(conf.int = SCS)
 }
 
-.crs.bootstrap.bounds <- function(boot.t, alpha, band.type, center) {
+.crs_plot_quantile_type7_sorted <- function(sorted.x, probs) {
+  n <- length(sorted.x)
+  probs <- pmin(pmax(as.double(probs), 0), 1)
+  if(n < 1L) return(rep.int(NA_real_, length(probs)))
+
+  h <- 1 + (n - 1) * probs
+  lo <- floor(h)
+  hi <- ceiling(h)
+  q <- sorted.x[lo] + (h - lo) * (sorted.x[hi] - sorted.x[lo])
+  q[probs <= 0] <- sorted.x[1L]
+  q[probs >= 1] <- sorted.x[n]
+  q
+}
+
+.crs_plot_quantile_bounds_single <- function(boot.t,
+                                             probs,
+                                             progress_tick = NULL,
+                                             progress_offset = 0L) {
   neval <- ncol(boot.t)
-  if (band.type == "standard") {
-    z <- qnorm(1 - alpha/2)
-    se <- sqrt(diag(cov(boot.t)))
-    return(cbind(center - z * se, center + z * se))
+  out <- matrix(NA_real_, nrow = neval, ncol = length(probs))
+  row.names <- colnames(boot.t)
+  if(!is.null(row.names)) rownames(out) <- row.names
+  colnames(out) <- names(stats::quantile(c(0, 1), probs = probs))
+
+  for(j in seq_len(neval)) {
+    out[j, ] <- stats::quantile(boot.t[, j], probs = probs)
+    if(is.function(progress_tick)) progress_tick(progress_offset + j)
   }
+  out
+}
+
+.crs_plot_quantile_bounds_multi <- function(boot.t,
+                                            probs.list,
+                                            progress_tick = NULL,
+                                            progress_offset = 0L) {
+  probs.list <- unclass(probs.list)
+  if(!length(probs.list)) return(list())
+
+  neval <- ncol(boot.t)
+  row.names <- colnames(boot.t)
+  out <- lapply(probs.list, function(probs) {
+    prob.names <- names(stats::quantile(c(0, 1), probs = probs))
+    matrix(NA_real_,
+           nrow = neval,
+           ncol = length(probs),
+           dimnames = list(row.names, prob.names))
+  })
+  names(out) <- names(probs.list)
+
+  for(j in seq_len(neval)) {
+    sorted.j <- sort.int(boot.t[, j])
+    for(nm in names(probs.list)) {
+      out[[nm]][j, ] <- .crs_plot_quantile_type7_sorted(sorted.j, probs.list[[nm]])
+    }
+    if(is.function(progress_tick)) progress_tick(progress_offset + j)
+  }
+  out
+}
+
+.crs_plot_bootstrap_col_sds <- function(boot.t) {
+  boot.t <- as.matrix(boot.t)
+  B <- nrow(boot.t)
+  if(B <= 1L) return(rep.int(0.0, ncol(boot.t)))
+
+  mu <- colMeans(boot.t)
+  sqrt(colSums((sweep(boot.t, 2L, mu, "-"))^2) / (B - 1L))
+}
+
+.crs.bootstrap.quantile.bounds <- function(boot.t,
+                                           alpha,
+                                           band.type,
+                                           progress_tick = NULL,
+                                           progress_offset = 0L) {
+  neval <- ncol(boot.t)
   if (band.type == "pointwise") {
-    return(t(apply(boot.t, 2, quantile, probs = c(alpha/2, 1 - alpha/2))))
+    return(.crs_plot_quantile_bounds_single(
+      boot.t = boot.t,
+      probs = c(alpha / 2.0, 1.0 - alpha / 2.0),
+      progress_tick = progress_tick,
+      progress_offset = progress_offset))
   }
   if (band.type == "bonferroni") {
-    return(t(apply(boot.t, 2, quantile, probs = c(alpha/(2 * neval), 1 - alpha/(2 * neval)))))
+    return(.crs_plot_quantile_bounds_single(
+      boot.t = boot.t,
+      probs = c(alpha / (2.0 * neval), 1.0 - alpha / (2.0 * neval)),
+      progress_tick = progress_tick,
+      progress_offset = progress_offset))
   }
   if (band.type == "simultaneous") {
-    return(.crs.SCSrank(boot.t, conf.level = 1 - alpha)$conf.int)
+    return(.crs.SCSrank(boot.t,
+                        conf.level = 1 - alpha,
+                        progress_tick = progress_tick,
+                        progress_offset = progress_offset)$conf.int)
   }
   if (band.type == "all") {
+    quantile.bounds <- .crs_plot_quantile_bounds_multi(
+      boot.t = boot.t,
+      probs.list = list(
+        pointwise = c(alpha / 2.0, 1.0 - alpha / 2.0),
+        bonferroni = c(alpha / (2.0 * neval), 1.0 - alpha / (2.0 * neval))
+      ),
+      progress_tick = progress_tick,
+      progress_offset = progress_offset)
     return(list(
-      pointwise = .crs.bootstrap.bounds(boot.t, alpha, "pointwise", center),
-      simultaneous = .crs.bootstrap.bounds(boot.t, alpha, "simultaneous", center),
-      bonferroni = .crs.bootstrap.bounds(boot.t, alpha, "bonferroni", center)
+      pointwise = quantile.bounds$pointwise,
+      bonferroni = quantile.bounds$bonferroni,
+      simultaneous = .crs.bootstrap.quantile.bounds(
+        boot.t = boot.t,
+        alpha = alpha,
+        band.type = "simultaneous",
+        progress_tick = progress_tick,
+        progress_offset = progress_offset + neval)
     ))
   }
-  stop("'band.type' must be one of standard, pointwise, bonferroni, simultaneous, all")
+  stop("'band.type' must be one of pointwise, bonferroni, simultaneous, all")
+}
+
+.crs_plot_bootstrap_interval_summary <- function(boot.t,
+                                                 t0,
+                                                 alpha,
+                                                 band.type,
+                                                 progress.label = NULL,
+                                                 display.nomad.progress = TRUE) {
+  if(!(band.type %in% c("standard", "pointwise", "bonferroni", "simultaneous", "all"))) {
+    stop("'band.type' must be one of standard, pointwise, bonferroni, simultaneous, all")
+  }
+
+  neval <- max(1L, ncol(boot.t))
+  progress.total <- switch(
+    band.type,
+    standard = 2L,
+    pointwise = neval,
+    bonferroni = neval,
+    simultaneous = 2L * neval,
+    all = 3L * neval
+  )
+  progress <- NULL
+  if(isTRUE(display.nomad.progress)) {
+    label <- if(is.null(progress.label)) {
+      sprintf("Constructing bootstrap %s bands", band.type)
+    } else {
+      progress.label
+    }
+    progress <- .crs_plot_stage_progress_begin(total = progress.total,
+                                               label = label)
+    on.exit(.crs_plot_progress_end(progress), add = TRUE)
+  }
+  progress_tick <- local({
+    function(done) {
+      progress <<- .crs_plot_progress_tick(progress, done = done)
+      invisible(NULL)
+    }
+  })
+
+  if(identical(band.type, "standard")) {
+    boot.sd <- .crs_plot_bootstrap_col_sds(boot.t)
+    progress <- .crs_plot_progress_tick(progress, done = 1L, force = TRUE)
+    z <- qnorm(1 - alpha / 2)
+    bounds <- cbind(t0 - z * boot.sd, t0 + z * boot.sd)
+    progress <- .crs_plot_progress_tick(progress, done = 2L, force = TRUE)
+    all.bounds <- NULL
+  } else if(identical(band.type, "all")) {
+    all.bounds <- .crs.bootstrap.quantile.bounds(
+      boot.t = boot.t,
+      alpha = alpha,
+      band.type = "all",
+      progress_tick = progress_tick)
+    bounds <- all.bounds$pointwise
+  } else {
+    bounds <- .crs.bootstrap.quantile.bounds(
+      boot.t = boot.t,
+      alpha = alpha,
+      band.type = band.type,
+      progress_tick = progress_tick)
+    all.bounds <- NULL
+  }
+
+  list(
+    bounds = bounds,
+    all.bounds = all.bounds,
+    err = cbind(t0 - bounds[, 1L], bounds[, 2L] - t0),
+    all.err = if(is.null(all.bounds)) NULL else lapply(all.bounds, function(bb) {
+      cbind(t0 - bb[, 1L], bb[, 2L] - t0)
+    })
+  )
+}
+
+.crs.bootstrap.bounds <- function(boot.t, alpha, band.type, center) {
+  summary <- .crs_plot_bootstrap_interval_summary(
+    boot.t = boot.t,
+    t0 = center,
+    alpha = alpha,
+    band.type = band.type,
+    display.nomad.progress = FALSE
+  )
+  if(identical(band.type, "all")) summary$all.bounds else summary$bounds
 }
 
 .crs.draw.all <- function(x, all.bounds, add.legend = TRUE, legend.loc = "topleft") {
@@ -1319,11 +1574,165 @@ summary.crs <- function(object,
   }
 }
 
+.crs_bstar_lam <- function(s) {
+  ((abs(s) >= 0) * (abs(s) < 0.5)) +
+    2 * (1 - abs(s)) * (abs(s) >= 0.5) * (abs(s) <= 1)
+}
+
+.crs_b_star <- function(data,
+                        Kn = NULL,
+                        mmax = NULL,
+                        Bmax = NULL,
+                        c = NULL,
+                        round = FALSE) {
+  data <- data.frame(data)
+  keep <- vapply(data, function(x) {
+    x <- as.numeric(x)
+    stats::var(x, na.rm = TRUE) > 0
+  }, logical(1L))
+  data <- data[keep]
+  if (!length(data)) return(matrix(1, nrow = 1L, ncol = 2L))
+
+  n <- nrow(data)
+  k <- ncol(data)
+  if (is.null(Kn)) Kn <- max(5, ceiling(log10(n)))
+  if (is.null(mmax)) mmax <- ceiling(sqrt(n)) + Kn
+  if (is.null(Bmax)) Bmax <- ceiling(min(3 * sqrt(n), n / 3))
+  if (is.null(c)) c <- stats::qnorm(0.975)
+
+  BstarSB <- numeric(length = k)
+  BstarCB <- numeric(length = k)
+
+  for (i in seq_len(k)) {
+    xi <- as.numeric(data[[i]])
+    rho.k <- stats::acf(xi,
+                        lag.max = mmax,
+                        type = "correlation",
+                        plot = FALSE)$acf[-1L]
+    rho.k.crit <- c * sqrt(log10(n) / n)
+    num.insignificant <- vapply(seq_len(max(mmax - Kn + 1L, 0L)),
+                                function(j) {
+                                  sum((abs(rho.k) < rho.k.crit)[j:(j + Kn - 1L)])
+                                },
+                                integer(1L))
+    if (any(num.insignificant == Kn)) {
+      mhat <- which(num.insignificant == Kn)[1L]
+    } else if (any(abs(rho.k) > rho.k.crit)) {
+      lag.sig <- which(abs(rho.k) > rho.k.crit)
+      mhat <- if (length(lag.sig) == 1L) lag.sig else max(lag.sig)
+    } else {
+      mhat <- 1L
+    }
+
+    M <- min(2 * mhat, mmax)
+    kk <- seq(-M, M)
+    R.k <- stats::ccf(xi, xi,
+                      lag.max = M,
+                      type = "covariance",
+                      plot = FALSE)$acf
+    Ghat <- sum(.crs_bstar_lam(kk / M) * abs(kk) * R.k)
+    DCBhat <- 4 / 3 * sum(.crs_bstar_lam(kk / M) * R.k)^2
+    DSBhat <- 2 * sum(.crs_bstar_lam(kk / M) * R.k)^2
+    BstarSB[i] <- ((2 * Ghat^2) / DSBhat)^(1 / 3) * n^(1 / 3)
+    BstarCB[i] <- ((2 * (Ghat^2) / DCBhat)^(1 / 3)) * (n^(1 / 3))
+  }
+
+  if (isTRUE(round)) {
+    BstarSB <- pmax(1, pmin(Bmax, round(BstarSB)))
+    BstarCB <- pmax(1, pmin(Bmax, round(BstarCB)))
+  } else {
+    BstarSB <- pmin(BstarSB, Bmax)
+    BstarCB <- pmin(BstarCB, Bmax)
+  }
+
+  cbind(BstarSB, BstarCB)
+}
+
+.crs_block_bootstrap_default_blocklen <- function(xdat) {
+  xmat <- data.matrix(xdat)
+  out <- .crs_b_star(xmat, round = TRUE)
+  blocklen <- as.integer(out[1L, 1L])
+  if (length(blocklen) != 1L || is.na(blocklen) || blocklen < 1L)
+    stop("could not determine a valid block bootstrap length; specify boot_control = crs_boot_control(blocklen = ...)",
+         call. = FALSE)
+  blocklen
+}
+
+.crs_block_counts_drawer <- function(n,
+                                     B,
+                                     blocklen,
+                                     sim = c("fixed", "geom"),
+                                     n.sim = n,
+                                     endcorr = TRUE) {
+  sim <- match.arg(sim)
+  n <- as.integer(n)
+  B <- as.integer(B)
+  n.sim <- as.integer(n.sim)
+  blocklen <- as.integer(blocklen)
+
+  if (n < 1L || B < 1L || n.sim < 1L)
+    stop("invalid block bootstrap dimensions", call. = FALSE)
+  if (length(blocklen) != 1L || is.na(blocklen) ||
+      blocklen < 1L || blocklen > n)
+    stop("invalid block length for block bootstrap", call. = FALSE)
+
+  if (identical(blocklen, 1L)) {
+    prob <- rep.int(1 / n, n)
+    return(function(start, stopi) {
+      start <- as.integer(start)
+      stopi <- as.integer(stopi)
+      if (start < 1L || stopi < start || stopi > B)
+        stop("invalid block bootstrap chunk bounds", call. = FALSE)
+      stats::rmultinom(n = stopi - start + 1L, size = n.sim, prob = prob)
+    })
+  }
+
+  ts.array <- utils::getFromNamespace("ts.array", "boot")
+  make.ends <- utils::getFromNamespace("make.ends", "boot")
+
+  function(start, stopi) {
+    start <- as.integer(start)
+    stopi <- as.integer(stopi)
+    if (start < 1L || stopi < start || stopi > B)
+      stop("invalid block bootstrap chunk bounds", call. = FALSE)
+
+    bsz <- stopi - start + 1L
+    ts.draws <- ts.array(n = n,
+                         n.sim = n.sim,
+                         R = bsz,
+                         l = blocklen,
+                         sim = sim,
+                         endcorr = isTRUE(endcorr))
+    starts <- as.matrix(ts.draws$starts)
+    lengths <- ts.draws$lengths
+    out <- matrix(0.0, nrow = n, ncol = bsz)
+
+    for (jj in seq_len(bsz)) {
+      ends <- if (identical(sim, "geom")) {
+        cbind(starts[jj, ], lengths[jj, ])
+      } else {
+        cbind(starts[jj, ], lengths)
+      }
+      inds <- apply(ends, 1L, make.ends, n)
+      inds <- if (is.list(inds)) {
+        as.integer(unlist(inds)[seq_len(n.sim)])
+      } else {
+        as.integer(inds)[seq_len(n.sim)]
+      }
+      out[, jj] <- tabulate(inds, nbins = n)
+    }
+
+    out
+  }
+}
+
 .crs.bootstrap.matrix <- function(object,
                                   newdata,
                                   deriv = 0,
                                   deriv.index = 1,
                                   boot.num = 99,
+                                  counts.drawer = NULL,
+                                  bootstrap.method = "inid",
                                   display.warnings = TRUE,
                                   display.nomad.progress = TRUE,
                                   progress.target = NULL) {
@@ -1332,13 +1741,15 @@ summary.crs <- function(object,
   if (isTRUE(display.nomad.progress)) {
     prep.activity <- .crs_plot_activity_begin(
       .crs_plot_bootstrap_stage_label(
-        stage = "Preparing plot bootstrap",
+        stage = sprintf("Preparing plot bootstrap %s", bootstrap.method),
         target_label = progress.target
       )
     )
     on.exit(.crs_plot_activity_end(prep.activity), add = TRUE)
   }
-  pred0 <- predict(object, newdata = newdata, deriv = deriv)
+  object.pred <- object
+  if (deriv > 0) object.pred$deriv <- deriv
+  pred0 <- predict(object.pred, newdata = newdata, deriv = deriv)
   center <- if (deriv > 0) attr(pred0, "deriv.mat")[,deriv.index] else as.numeric(pred0)
   boot.mat <- matrix(NA_real_, nrow = boot.num, ncol = nrow(newdata))
   progress <- NULL
@@ -1352,7 +1763,7 @@ summary.crs <- function(object,
     progress <- .crs_plot_stage_progress_begin(
       total = boot.num,
       label = .crs_plot_bootstrap_stage_label(
-        stage = "Plot bootstrap",
+        stage = sprintf("Plot bootstrap %s", bootstrap.method),
         target_label = progress.target
       )
     )
@@ -1360,7 +1771,15 @@ summary.crs <- function(object,
   }
 
   for (b in seq_len(boot.num)) {
-    idx <- sample.int(n, size = n, replace = TRUE)
+    idx <- if (is.null(counts.drawer)) {
+      sample.int(n, size = n, replace = TRUE)
+    } else {
+      counts <- counts.drawer(b, b)[, 1L]
+      if (length(counts) != n || any(!is.finite(counts)) ||
+          any(counts < 0) || sum(counts) < 1L)
+        stop("invalid block bootstrap counts", call. = FALSE)
+      rep.int(seq_len(n), as.integer(counts))
+    }
     fit.b <- crs.default(
       xz = object$xz[idx,,drop=FALSE],
       y = object$y[idx],
@@ -1380,6 +1799,7 @@ summary.crs <- function(object,
     )
     fit.b$xz <- object$xz[idx,,drop=FALSE]
     fit.b$y <- object$y[idx]
+    if (deriv > 0) fit.b$deriv <- deriv
     if (!is.null(object$terms)) fit.b$terms <- object$terms
     if (!is.null(object$xlevels)) fit.b$xlevels <- object$xlevels
     pred.b <- predict(fit.b, newdata = newdata, deriv = deriv)
@@ -1389,860 +1809,364 @@ summary.crs <- function(object,
   list(center = center, boot.mat = boot.mat)
 }
 
-plot.crs <- function(x,
-                     mean=FALSE,
-                     deriv=0,
-                     ci=FALSE,
-                     plot.errors.method = c("asymptotic","bootstrap"),
-                     plot.errors.boot.num = 99,
-                     plot.errors.type = c("standard","pointwise","bonferroni","simultaneous","all"),
-                     plot.errors.alpha = 0.05,
-                     num.eval=100,
-                     caption=list("Residuals vs Fitted",
-                                  "Normal Q-Q Plot",
-                                  "Scale-Location",
-                                  "Cook's Distance"),
-                     xtrim = 0.0,
-                     xq = 0.5,
-                     plot.behavior = c("plot","plot-data","data"),
-                     common.scale=TRUE,
-                     persp.rgl=FALSE,
-                     display.warnings=TRUE,
-                     display.nomad.progress=TRUE,
-                     ...) {
+.crs_mammen_draws <- function(n, B) {
+  a <- (1 - sqrt(5)) / 2
+  p.a <- (sqrt(5) + 1) / (2 * sqrt(5))
+  u <- matrix(stats::runif(n * B), nrow = n, ncol = B)
+  out <- matrix(1 - a, nrow = n, ncol = B)
+  out[u <= p.a] <- a
+  out
+}
 
-  plot.behavior <- match.arg(plot.behavior)
-  plot.errors.method <- match.arg(plot.errors.method)
-  plot.errors.type <- match.arg(plot.errors.type)
+.crs_rademacher_draws <- function(n, B) {
+  u <- matrix(stats::runif(n * B), nrow = n, ncol = B)
+  out <- matrix(1, nrow = n, ncol = B)
+  out[u <= 0.5] <- -1
+  out
+}
 
-  if (ci && plot.errors.method == "asymptotic" && plot.errors.type != "standard") {
-    if (display.warnings) warning("asymptotic CI supports only standard type; switching plot.errors.type='standard'")
-    plot.errors.type <- "standard"
+.crs_plot_normalize_wild <- function(wild = c("rademacher", "mammen")) {
+  if(length(wild) > 1L) wild <- wild[1L]
+  match.arg(wild, c("mammen", "rademacher"))
+}
+
+.crs_wild_chunk_size <- function(n, B) {
+  chunk.opt <- getOption("crs.plot.wild.chunk.size")
+  if(!is.null(chunk.opt)) {
+    chunk.opt <- as.integer(chunk.opt)
+    if(length(chunk.opt) != 1L || is.na(chunk.opt) || chunk.opt < 1L) {
+      stop("option 'crs.plot.wild.chunk.size' must be a positive integer",
+           call. = FALSE)
+    }
+    return(min(as.integer(B), chunk.opt))
   }
-  if (ci && deriv > 0 && plot.errors.method == "bootstrap") {
-    if (display.warnings) warning("bootstrap CI for derivatives is not yet supported in plot.crs; switching to asymptotic")
-    plot.errors.method <- "asymptotic"
-    plot.errors.type <- "standard"
+  target.bytes <- 64 * 1024 * 1024
+  chunk <- as.integer(floor(target.bytes / (8 * max(1L, as.integer(n)))))
+  if(!is.finite(chunk) || is.na(chunk) || chunk < 1L) chunk <- 1L
+  min(as.integer(B), chunk)
+}
+
+.crs_plot_wild_hat_block_rows <- function(ntrain, neval) {
+  target <- getOption("crs.plot.wild.hat.block.bytes", 4 * 1024^2)
+  target <- suppressWarnings(as.numeric(target)[1L])
+  if(!is.finite(target) || is.na(target) || target <= 0) target <- 4 * 1024^2
+  rows <- as.integer(floor(target / (8 * max(1L, as.integer(ntrain)))))
+  max(1L, min(as.integer(neval), rows))
+}
+
+.crs_plot_wild_dense_hat_enabled <- function(ntrain, neval) {
+  threshold <- getOption("crs.plot.wild.dense.hat.threshold.bytes",
+                         128 * 1024^2)
+  threshold <- suppressWarnings(as.numeric(threshold)[1L])
+  if(!is.finite(threshold) || is.na(threshold) || threshold < 0) {
+    threshold <- 128 * 1024^2
+  }
+  as.double(ntrain) * as.double(neval) * 8.0 <= threshold
+}
+
+.crs_wild_boot_from_hat <- function(H,
+                                    y,
+                                    fit.mean,
+                                    B,
+                                    wild,
+                                    display.nomad.progress = TRUE,
+                                    progress.label = "Plot bootstrap wild") {
+  y <- as.double(y)
+  fit.mean <- as.double(fit.mean)
+  n <- length(y)
+  if(length(fit.mean) != n) {
+    stop("length mismatch between fitted means and response for wild bootstrap",
+         call. = FALSE)
+  }
+  B <- as.integer(B)
+  if(B < 1L) stop("B must be a positive integer", call. = FALSE)
+  wild <- .crs_plot_normalize_wild(wild)
+  draw.fun <- if(identical(wild, "mammen")) {
+    .crs_mammen_draws
+  } else {
+    .crs_rademacher_draws
+  }
+  residuals <- y - fit.mean
+  boot.mat <- matrix(NA_real_, nrow = B, ncol = NROW(H))
+  chunk.size <- .crs_wild_chunk_size(n = n, B = B)
+
+  progress <- NULL
+  if(isTRUE(display.nomad.progress)) {
+    progress <- .crs_plot_stage_progress_begin(total = B, label = progress.label)
+    on.exit(.crs_plot_progress_end(progress), add = TRUE)
   }
 
-  object <- x
+  start <- 1L
+  while(start <= B) {
+    stopi <- min(B, start + chunk.size - 1L)
+    bsz <- stopi - start + 1L
+    draws <- draw.fun(n = n, B = bsz)
+    ystar <- residuals * draws
+    ystar <- ystar + fit.mean
+    boot.mat[start:stopi, ] <- t(H %*% ystar)
+    progress <- .crs_plot_progress_tick(progress, done = stopi,
+                                        force = (start == 1L))
+    start <- stopi + 1L
+  }
 
-  progress.status <- .crs_progress_status_begin(
-    enabled = display.nomad.progress,
-    surface = "plot"
+  list(t = boot.mat, t0 = as.vector(H %*% y))
+}
+
+.crs.bootstrap.matrix.wild <- function(object,
+                                       newdata,
+                                       newdata.base = NULL,
+                                       deriv = 0L,
+                                       deriv.index = 1L,
+                                       boot.num = 99,
+                                       wild = c("rademacher", "mammen"),
+                                       display.nomad.progress = TRUE,
+                                       progress.target = NULL) {
+  if(!is.null(object$tau)) {
+    stop("bootstrap=\"wild\" currently supports mean CRS objects only",
+         call. = FALSE)
+  }
+  wild <- .crs_plot_normalize_wild(wild)
+  boot.num <- as.integer(boot.num)
+  if(boot.num < 1L) stop("B must be a positive integer", call. = FALSE)
+  deriv <- as.integer(deriv)
+  deriv.index <- as.integer(deriv.index)
+  is.effect <- !is.null(newdata.base)
+
+  prep.activity <- NULL
+  if(isTRUE(display.nomad.progress)) {
+    prep.activity <- .crs_plot_activity_begin(
+      .crs_plot_bootstrap_stage_label(
+        stage = "Preparing plot bootstrap",
+        method_label = "wild",
+        target_label = progress.target
+      )
+    )
+    on.exit(.crs_plot_activity_end(prep.activity), add = TRUE)
+  }
+
+  fit.mean <- as.vector(crshat(object, output = "apply"))
+  ntrain <- NROW(object$xz)
+  neval <- NROW(newdata)
+  center <- as.vector(crshat(object, newdata = newdata, output = "apply",
+                             deriv = deriv, deriv.index = deriv.index))
+  if(is.effect) {
+    center.base <- as.vector(crshat(object, newdata = newdata.base,
+                                    output = "apply"))
+    center <- center - center.base
+  }
+
+  if(!is.null(prep.activity)) {
+    .crs_plot_activity_end(prep.activity)
+    prep.activity <- NULL
+  }
+
+  progress.label <- .crs_plot_bootstrap_stage_label(
+    stage = "Plot bootstrap",
+    method_label = "wild",
+    target_label = progress.target
   )
-  on.exit(.crs_progress_status_clear(progress.status), add = TRUE)
-  set_status <- function(msg = NULL) {
-    if (is.null(msg)) return(.crs_progress_status_clear(progress.status))
-    .crs_progress_status_update(progress.status, msg)
-  }
-  set_status()
 
-  xq <- double(ncol(object$xz)) + xq
-
-  ## Check for proper derivative
-
-  if(deriv < 0) stop("derivative order must be a non-negative integer")
-
-  ## Default - basic residual plots
-
-  if(!mean && !deriv) {
-
-    par(mfrow=c(2,2))
-
-    ## Residuals versus fitted
-
-    set_status("Working...")
-
-    plot(fitted(object),
-         residuals(object),
-         xlab="Fitted Values",
-         ylab="Residuals",
-         main=caption[[1]],
-         ...)
-
-    ## QQ plot
-
-    set_status("Working...")
-
-    std.res <- residuals(object)/sqrt(mean(residuals(object)^2))
-
-    qqnorm(std.res,
-           main=caption[[2]])
-
-    qqline(std.res)
-
-    ## Standardized versus fitted
-
-    set_status("Working...")
-
-    plot(fitted(object),
-         sqrt(abs(residuals(object,"pearson"))),
-         xlab="Fitted Values",
-         ylab=as.expression(substitute(sqrt(abs(YL)), list(YL = as.name("Standardized Residuals")))),
-         main=caption[[3]],
-         ...)
-
-    ## Cook's distance \frac{\hat\epsilon_t^2
-    ## h_{tt}}{\hat\sigma^2(1-h_{tt})^2k}. Note that this is not
-    ## computed for kernel method (what is df.residual when there are
-    ## multiple models, etc.?)
-
-
-    if(!object$kernel) {
-
-      set_status("Working...")
-
-      sigmasq <- sum(residuals(object)^2)/object$df.residual
-      cook <- (residuals(object)^2*object$hatvalues)/(sigmasq*(1-object$hatvalues)^2*object$k)
-      plot(cook,
-           type = "h",
-           main=caption[[4]],
-           xlab = "Observation Number",
-           ylab = "Cook's Distance",
-           ...)
-
+  if(.crs_plot_wild_dense_hat_enabled(ntrain = ntrain, neval = neval)) {
+    H <- crshat(object, newdata = newdata, output = "matrix",
+                deriv = deriv, deriv.index = deriv.index)
+    if(is.effect) {
+      H <- H - crshat(object, newdata = newdata.base, output = "matrix")
     }
-
-    set_status()
-
+    boot <- .crs_wild_boot_from_hat(
+      H = H,
+      y = object$y,
+      fit.mean = fit.mean,
+      B = boot.num,
+      wild = wild,
+      display.nomad.progress = display.nomad.progress,
+      progress.label = progress.label
+    )
+    return(list(center = center, boot.mat = boot$t))
   }
 
-  ## Mean
+  boot.mat <- matrix(NA_real_, nrow = boot.num, ncol = neval)
+  draw.fun <- if(identical(wild, "mammen")) {
+    .crs_mammen_draws
+  } else {
+    .crs_rademacher_draws
+  }
+  draws <- draw.fun(n = ntrain, B = boot.num)
+  ystar <- (as.double(object$y) - fit.mean) * draws
+  ystar <- ystar + fit.mean
 
-  if(mean) {
+  block.rows <- .crs_plot_wild_hat_block_rows(ntrain = ntrain, neval = neval)
+  progress <- NULL
+  if(isTRUE(display.nomad.progress)) {
+    progress <- .crs_plot_stage_progress_begin(total = boot.num,
+                                               label = progress.label)
+    on.exit(.crs_plot_progress_end(progress), add = TRUE)
+  }
 
-    ## Information required to compute predictions
+  start <- 1L
+  while(start <= neval) {
+    stopi <- min(neval, start + block.rows - 1L)
+    H <- crshat(object,
+                newdata = newdata[start:stopi, , drop = FALSE],
+                output = "matrix",
+                deriv = deriv,
+                deriv.index = deriv.index)
+    if(is.effect) {
+      H <- H - crshat(object,
+                      newdata = newdata.base[start:stopi, , drop = FALSE],
+                      output = "matrix")
+    }
+    boot.mat[, start:stopi] <- t(H %*% ystar)
+    done <- min(boot.num, as.integer(ceiling(boot.num * stopi / neval)))
+    progress <- .crs_plot_progress_tick(progress, done = done,
+                                        force = (start == 1L))
+    start <- stopi + 1L
+  }
+  list(center = center, boot.mat = boot.mat)
+}
 
-    basis <- object$basis
-    prune <- object$prune
-    prune.index <- object$prune.index
+.crs_plot_render_surface_rgl <- function(x,
+                                         y,
+                                         z,
+                                         zlim = NULL,
+                                         xlab,
+                                         ylab,
+                                         zlab,
+                                         main,
+                                         col = NULL,
+                                         border = .crs_plot_color("surface_border"),
+                                         theta = 45,
+                                         phi = 30,
+                                         par3d.args = list(),
+                                         view3d.args = list(),
+                                         persp3d.args = list(),
+                                         grid3d.args = list(),
+                                         widget.args = list(),
+                                         draw.extras = NULL,
+                                         data_overlay = FALSE,
+                                         data_rug = FALSE,
+                                         overlay_x1 = NULL,
+                                         overlay_x2 = NULL,
+                                         overlay_y = NULL,
+                                         display.warnings = TRUE) {
+  old.opts <- options(
+    rgl.useNULL = TRUE,
+    rgl.printRglwidget = TRUE
+  )
+  on.exit(options(old.opts), add = TRUE)
 
-    xz <- object$xz
-    y <- object$y
-
-    ## Divide into factors and numeric
-
-    if(!object$kernel) {
-      xztmp <- splitFrame(xz)
+  old.env <- Sys.getenv("RGL_USE_NULL", unset = NA_character_)
+  Sys.setenv(RGL_USE_NULL = "TRUE")
+  on.exit({
+    if (is.na(old.env)) {
+      Sys.unsetenv("RGL_USE_NULL")
     } else {
-      xztmp <- splitFrame(xz,factor.to.numeric=TRUE)
+      Sys.setenv(RGL_USE_NULL = old.env)
     }
-    x <- xztmp$x
-    z <- xztmp$z
-    is.ordered.z <- xztmp$is.ordered.z
-    rm(xztmp)
+  }, add = TRUE)
 
-    ## Get degree vector and lambda vector
-
-    complexity <- object$complexity
-    knots <- object$knots
-    K <- object$K
-    degree <- object$degree
-    segments <- object$segments
-    include <- object$include
-    lambda <- object$lambda
-    is.ordered.z <- object$is.ordered.z
-    tau <- object$tau
-    weights <- object$weights
-
-    ## End information required to compute predictions
-
-    if(!persp.rgl) {
-
-      mg <- list()
-
-      for(i in seq_len(NCOL(object$xz))) {
-
-        if(!is.factor(object$xz[,i])) {
-          newdata <- matrix(NA,nrow=num.eval,ncol=NCOL(object$xz))
-          neval <- num.eval
-        } else {
-          newdata <- matrix(NA,nrow=length(levels(object$xz[,i])),ncol=NCOL(object$xz))
-          neval <- length(levels(object$xz[,i]))
-        }
-
-        newdata <- data.frame(newdata)
-
-        if(!is.factor(object$xz[,i])) {
-          xlim <- trim.quantiles(object$xz[,i],xtrim)
-          newdata[,i] <- seq(xlim[1],xlim[2],length=neval)
-        } else {
-          newdata[,i] <- factor(levels(object$xz[,i]),levels=levels(object$xz[,i]),ordered=is.ordered(object$xz[,i]))
-        }
-
-        for(j in (seq_len(NCOL(object$xz)))[-i]) {
-          if(!is.factor(object$xz[,j])) {
-            newdata[,j] <- rep(uocquantile(object$xz[,j],prob=xq[j]),neval)
-          } else {
-            newdata[,j] <- factor(rep(uocquantile(object$xz[,j],prob=xq[j]),neval),levels=levels(object$xz[,j]),ordered=is.ordered(object$xz[,j]))
-          }
-        }
-
-        newdata <- data.frame(newdata)
-        names(newdata) <- names(object$xz)
-
-        if(!object$kernel) {
-          xztmp <- splitFrame(data.frame(newdata))
-        } else {
-          xztmp <- splitFrame(data.frame(newdata),factor.to.numeric=TRUE)
-        }
-        xeval <- xztmp$x
-        zeval <- xztmp$z
-        is.ordered.z <- xztmp$is.ordered.z
-        rm(xztmp)
-
-        ## Compute the predicted values.
-
-        set_status(.crs_plot_bootstrap_stage_label(
-          stage = "Evaluating plot surface",
-          target_label = .crs_plot_regression_bootstrap_target_label(
-            object = object,
-            slice.index = i,
-            gradients = FALSE
-          )
-        ))
-
-        if(!object$kernel) {
-
-          tmp <- preditFactorSpline(x=x,
-                                    y=y,
-                                    z=z,
-                                    K=K,
-                                    I=include,
-                                    xeval=xeval,
-                                    zeval=zeval,
-                                    basis=basis,
-                                    knots=knots,
-                                    prune=prune,
-                                    prune.index=prune.index,
-                                    tau=tau,
-                                    weights=weights,
-                                    display.warnings=display.warnings)$fitted.values
-
-          fitted.values <- tmp[,1]
-          lwr <- tmp[,2]
-          upr <- tmp[,3]
-          rm(tmp)
-
-        } else {
-
-          z <- as.matrix(z)
-          zeval <- as.matrix(zeval)
-
-          tmp <- predictKernelSpline(x=x,
-                                     y=y,
-                                     z=z,
-                                     K=K,
-                                     lambda=lambda,
-                                     is.ordered.z=is.ordered.z,
-                                     xeval=xeval,
-                                     zeval=zeval,
-                                     knots=knots,
-                                     basis=basis,
-                                     tau=tau,
-                                     weights=weights,
-                                     display.warnings=display.warnings)$fitted.values
-
-          fitted.values <- tmp[,1]
-          lwr <- tmp[,2]
-          upr <- tmp[,3]
-          rm(tmp)
-
-        }
-
-        if(!ci) {
-
-          mg[[i]] <- data.frame(newdata[,i],fitted.values)
-          names(mg[[i]]) <- c(names(newdata)[i],"mean")
-
-        } else {
-          if (plot.errors.method == "bootstrap") {
-            target.label <- .crs_plot_regression_bootstrap_target_label(
-              object = object,
-              slice.index = i,
-              gradients = FALSE
-            )
-            set_status()
-            boot <- .crs.bootstrap.matrix(object = object,
-                                         newdata = newdata,
-                                         deriv = 0,
-                                         deriv.index = i,
-                                         boot.num = plot.errors.boot.num,
-                                         display.warnings = display.warnings,
-                                         display.nomad.progress = display.nomad.progress,
-                                         progress.target = target.label)
-            set_status(.crs_plot_bootstrap_stage_label(
-              stage = sprintf("Constructing bootstrap %s bands", plot.errors.type),
-              target_label = target.label
-            ))
-            if (plot.errors.type == "all") {
-              all.bounds <- .crs.bootstrap.bounds(boot$boot.mat, plot.errors.alpha, "all", boot$center)
-              mg[[i]] <- data.frame(newdata[,i], boot$center,
-                                    all.bounds$pointwise[,1], all.bounds$pointwise[,2],
-                                    all.bounds$simultaneous[,1], all.bounds$simultaneous[,2],
-                                    all.bounds$bonferroni[,1], all.bounds$bonferroni[,2])
-              names(mg[[i]]) <- c(names(newdata)[i],"mean","lwr","upr","lwr.sim","upr.sim","lwr.bonf","upr.bonf")
-            } else {
-              bounds <- .crs.bootstrap.bounds(boot$boot.mat, plot.errors.alpha, plot.errors.type, boot$center)
-              mg[[i]] <- data.frame(newdata[,i], boot$center, bounds)
-              names(mg[[i]]) <- c(names(newdata)[i],"mean","lwr","upr")
-            }
-          } else {
-            mg[[i]] <- data.frame(newdata[,i],fitted.values,lwr,upr)
-            names(mg[[i]]) <- c(names(newdata)[i],"mean","lwr","upr")
-          }
-        }
-
-        set_status()
-
-      }
-
-      if(common.scale) {
-        min.mg <- Inf
-        max.mg <- -Inf
-        for(i in seq_along(mg)) {
-          if (ci && plot.errors.type == "all") {
-            min.mg <- min(min.mg, min(mg[[i]][,c("lwr","lwr.sim","lwr.bonf")]))
-            max.mg <- max(max.mg, max(mg[[i]][,c("upr","upr.sim","upr.bonf")]))
-          } else {
-            min.mg <- min(min.mg,min(mg[[i]][,-1]))
-            max.mg <- max(max.mg,max(mg[[i]][,-1]))
-          }
-        }
-        ylim <- c(min.mg,max.mg)
-      } else {
-        ylim <- NULL
-      }
-
-      if(plot.behavior!="data") {
-
-        if(!is.null(object$num.z)||(object$num.x>1)) par(mfrow=n2mfrow(NCOL(object$xz)))
-
-        for(i in seq_len(NCOL(object$xz))) {
-
-          if(!ci) {
-            plot(mg[[i]][,1],mg[[i]][,2],
-                 xlab=names(newdata)[i],
-                 ylab=if(is.null(tau)) "Conditional Mean" else paste("Conditional Quantile (tau = ",format(tau),")",sep=""),
-                 ylim=ylim,
-                 type="l",
-                 ...)
-
-          } else {
-            if(!common.scale) {
-              if (plot.errors.type == "all") {
-                ylim <- c(min(mg[[i]][,c("lwr","lwr.sim","lwr.bonf")]), max(mg[[i]][,c("upr","upr.sim","upr.bonf")]))
-              } else {
-                ylim <- c(min(mg[[i]][,-1]),max(mg[[i]][,-1]))
-              }
-            }
-            plot(mg[[i]][,1],mg[[i]][,2],
-                 xlab=names(newdata)[i],
-                 ylab=if(is.null(tau)) "Conditional Mean" else paste("Conditional Quantile (tau = ",format(tau),")",sep=""),
-                 ylim=ylim,
-                 type="l",
-                 ...)
-            if (plot.errors.type == "all") {
-              all.bounds <- list(
-                pointwise = cbind(mg[[i]][,"lwr"], mg[[i]][,"upr"]),
-                simultaneous = cbind(mg[[i]][,"lwr.sim"], mg[[i]][,"upr.sim"]),
-                bonferroni = cbind(mg[[i]][,"lwr.bonf"], mg[[i]][,"upr.bonf"])
-              )
-              .crs.draw.all(mg[[i]][,1], all.bounds, add.legend = TRUE)
-            } else {
-              ## Need to overlay for proper plotting of factor errorbars
-              par(new=TRUE)
-              plot(mg[[i]][,1],mg[[i]][,3],
-                   xlab="",
-                   ylab="",
-                   ylim=ylim,
-                   type="l",
-                   axes=FALSE,
-                   lty=2,
-                   col=2,
-                   ...)
-              par(new=TRUE)
-              plot(mg[[i]][,1],mg[[i]][,4],
-                   xlab="",
-                   ylab="",
-                   ylim=ylim,
-                   type="l",
-                   axes=FALSE,
-                   lty=2,
-                   col=2,
-                   ...)
-            }
-          }
-
-        }
-
-      }
-
-    } else {
-
-
-      if(!is.null(object$num.z)) stop(" Error: persp3d is for continuous predictors only")
-      if(object$num.x != 2) stop(" Error: persp3d is for cases involving two continuous predictors only")
-
-      newdata <- matrix(NA,nrow=num.eval,ncol=2)
-      newdata <- data.frame(newdata)
-
-      xlim <- trim.quantiles(object$xz[,1],xtrim)
-      ylim <- trim.quantiles(object$xz[,2],xtrim)
-
-      x1.seq <- seq(xlim[1],xlim[2],length=num.eval)
-      x2.seq <- seq(ylim[1],ylim[2],length=num.eval)
-
-      x.grid <- expand.grid(x1.seq,x2.seq)
-      newdata <- data.frame(x.grid[,1],x.grid[,2])
-      names(newdata) <- names(object$xz)
-
-      z <- matrix(predict(object,newdata=newdata),num.eval,num.eval)
-
-      mg <- list()
-
-      mg[[1]] <- data.frame(newdata,z)
-
-      if(plot.behavior!="data") {
-
-        num.colors <- 1000
-        colorlut <- topo.colors(num.colors)
-        col <- colorlut[ (num.colors-1)*(z-min(z))/(max(z)-min(z)) + 1 ]
-
-        if(requireNamespace("rgl", quietly = TRUE)) {
-
-          rgl::open3d()
-
-          rgl::par3d(windowRect=c(900,100,900+640,100+640))
-          rgl::view3d(theta = 0, phi = -70, fov = 80)
-
-          rgl::persp3d(x=x1.seq,y=x2.seq,z=z,
-                       xlab=names(object$xz)[1],ylab=names(object$xz)[2],zlab="Y",
-                       ticktype="detailed",
-                       border="red",
-                       color=col,
-                       alpha=.7,
-                       back="lines",
-                       main=if(is.null(tau)) "Conditional Mean" else paste("Conditional Quantile (tau = ",format(tau),")",sep=""))
-
-          rgl::grid3d(c("x", "y+", "z"))
-
-          rgl::play3d(rgl::spin3d(axis=c(0,0,1), rpm=5), duration=15)
-
-        } else {
-
-          if(display.warnings) warning("rgl not installed, option persp.rgl ignored")
-
-        }
-
-      }
-
-    }
-
-    if(plot.behavior!="plot") {
-      set_status()
-      if(!persp.rgl) par(mfrow=c(1,1))
-      return(mg)
-    }
-
+  if (!isTRUE(suppressWarnings(requireNamespace("rgl", quietly = TRUE)))) {
+    if(display.warnings) warning("rgl not installed, option persp.rgl ignored")
+    return(invisible(NULL))
   }
 
-  ## deriv
+  devices.before <- try(rgl::rgl.dev.list(), silent = TRUE)
+  if (inherits(devices.before, "try-error") || is.null(devices.before))
+    devices.before <- integer(0L)
 
-  if(deriv > 0) {
-
-    ## Information required to compute predictions
-
-    basis <- object$basis
-    prune <- object$prune
-    prune.index <- object$prune.index
-
-    xz <- object$xz
-    y <- object$y
-
-    ## Divide into factors and numeric
-
-    if(!object$kernel) {
-      xztmp <- splitFrame(xz)
+  opened.dev <- NULL
+  cleanup <- function() {
+    devices.after <- try(rgl::rgl.dev.list(), silent = TRUE)
+    if (!inherits(devices.after, "try-error") && !is.null(devices.after)) {
+      new.devices <- setdiff(devices.after, devices.before)
+      if (length(new.devices)) {
+        for (dev in new.devices) try(rgl::close3d(dev = dev, silent = TRUE), silent = TRUE)
+        return(invisible(NULL))
+      }
+    }
+    if (!is.null(opened.dev)) {
+      try(rgl::close3d(dev = opened.dev, silent = TRUE), silent = TRUE)
     } else {
-      xztmp <- splitFrame(xz,factor.to.numeric=TRUE)
+      try(rgl::close3d(silent = TRUE), silent = TRUE)
     }
-    x <- xztmp$x
-    z <- xztmp$z
-    is.ordered.z <- xztmp$is.ordered.z
-    rm(xztmp)
-
-    ## Get degree vector and lambda vector
-
-    complexity <- object$complexity
-    knots <- object$knots
-    K <- object$K
-    degree <- object$degree
-    segments <- object$segments
-    include <- object$include
-    lambda <- object$lambda
-    is.ordered.z <- object$is.ordered.z
-    tau <- object$tau
-    weights <- object$weights
-
-    ## End information required to compute predictions
-
-    if(deriv > 0) {
-
-      rg <- list()
-      m <- 0
-      i.numeric <- 0
-
-      for(i in seq_len(NCOL(object$xz))) {
-
-        if(!is.factor(object$xz[,i])) {
-          i.numeric <- i.numeric + 1
-          newdata <- matrix(NA,nrow=num.eval,ncol=NCOL(object$xz))
-          neval <- num.eval
-          m <- m + 1
-        } else {
-          newdata <- matrix(NA,nrow=length(levels(object$xz[,i])),ncol=NCOL(object$xz))
-          neval <- length(levels(object$xz[,i]))
-        }
-
-        newdata <- data.frame(newdata)
-        newdata.base <- data.frame(newdata)
-
-        if(!is.factor(object$xz[,i])) {
-          xlim <- trim.quantiles(object$xz[,i],xtrim)
-          newdata[,i] <- seq(xlim[1],xlim[2],length=neval)
-        } else {
-          newdata[,i] <- factor(levels(object$xz[,i]),levels=levels(object$xz[,i]),ordered=is.ordered(object$xz[,i]))
-          newdata.base[,i] <- factor(rep(levels(object$xz[,i])[1],neval),levels=levels(object$xz[,i]),ordered=is.ordered(object$xz[,i]))
-        }
-
-        for(j in (seq_len(NCOL(object$xz)))[-i]) {
-          if(!is.factor(object$xz[,j])) {
-            newdata[,j] <- rep(uocquantile(object$xz[,j],prob=xq[j]),neval)
-            newdata.base[,j] <- rep(uocquantile(object$xz[,j],prob=xq[j]),neval)
-          } else {
-            newdata[,j] <- factor(rep(uocquantile(object$xz[,j],prob=xq[j]),neval),levels=levels(object$xz[,j]),ordered=is.ordered(object$xz[,j]))
-            newdata.base[,j] <- factor(rep(uocquantile(object$xz[,j],prob=xq[j]),neval),levels=levels(object$xz[,j]),ordered=is.ordered(object$xz[,j]))
-          }
-        }
-
-        newdata <- data.frame(newdata)
-        names(newdata) <- names(object$xz)
-        newdata.base <- data.frame(newdata.base)
-        names(newdata.base) <- names(object$xz)
-
-        if(!object$kernel) {
-          xztmp <- splitFrame(data.frame(newdata))
-        } else {
-          xztmp <- splitFrame(data.frame(newdata),factor.to.numeric=TRUE)
-        }
-        xeval <- xztmp$x
-        zeval <- xztmp$z
-        is.ordered.z <- xztmp$is.ordered.z
-        rm(xztmp)
-
-        if(!object$kernel) {
-          xztmp <- splitFrame(data.frame(newdata.base))
-        } else {
-          xztmp <- splitFrame(data.frame(newdata.base),factor.to.numeric=TRUE)
-        }
-        xeval.base <- xztmp$x
-        zeval.base <- xztmp$z
-        is.ordered.z <- xztmp$is.ordered.z
-        rm(xztmp)
-
-        ## Compute the predicted values.
-
-        set_status(.crs_plot_bootstrap_stage_label(
-          stage = "Evaluating plot surface",
-          target_label = .crs_plot_regression_bootstrap_target_label(
-            object = object,
-            slice.index = i,
-            gradients = TRUE
-          )
-        ))
-
-        if(!object$kernel) {
-
-          if(!is.factor(newdata[,i])) {
-            if(deriv <= degree[i.numeric]) {
-              tmp <- derivFactorSpline(x=x,
-                                       y=y,
-                                       z=z,
-                                       K=K,
-                                       I=include,
-                                       xeval=xeval,
-                                       zeval=zeval,
-                                       knots=knots,
-                                       basis=basis,
-                                       deriv.index=m,
-                                       deriv=deriv,
-                                       prune.index=prune.index,
-                                       tau=tau,
-                                       weights=weights)
-            } else {
-              tmp <- matrix(0,nrow(newdata),3)
-            }
-            deriv.est <- tmp[,1]
-            deriv.lwr <- tmp[,2]
-            deriv.upr <- tmp[,3]
-            rm(tmp)
-          } else {
-            zpred <- preditFactorSpline(x=x,
-                                        y=y,
-                                        z=z,
-                                        K=K,
-                                        I=include,
-                                        xeval=xeval,
-                                        zeval=zeval,
-                                        knots=knots,
-                                        basis=basis,
-                                        prune=prune,
-                                        prune.index=prune.index,
-                                        tau=tau,
-                                        weights=weights)$fitted.values
-
-            zpred.base <- preditFactorSpline(x=x,
-                                             y=y,
-                                             z=z,
-                                             K=K,
-                                             I=include,
-                                             xeval=xeval.base,
-                                             zeval=zeval.base,
-                                             knots=knots,
-                                             basis=basis,
-                                             prune=prune,
-                                             prune.index=prune.index,
-                                             tau=tau,
-                                             weights=weights)$fitted.values
-
-            deriv.est <- zpred[,1]-zpred.base[,1]
-            deriv.lwr <- deriv.est - qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
-            deriv.upr <- deriv.est + qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
-
-          }
-
-        } else {
-
-          if(!is.factor(newdata[,i])) {
-            if(deriv <= degree[i.numeric]) {
-              tmp <- derivKernelSpline(x=x,
-                                       y=y,
-                                       z=z,
-                                       K=K,
-                                       lambda=lambda,
-                                       is.ordered.z=is.ordered.z,
-                                       xeval=xeval,
-                                       zeval=zeval,
-                                       knots=knots,
-                                       basis=basis,
-                                       deriv.index=m,
-                                       deriv=deriv,
-                                       tau=tau,
-                                       weights=weights)
-
-            } else {
-              tmp <- matrix(0,nrow(newdata),3)
-            }
-            deriv.est <- tmp[,1]
-            deriv.lwr <- tmp[,2]
-            deriv.upr <- tmp[,3]
-            rm(tmp)
-          } else {
-            zpred <- predictKernelSpline(x=x,
-                                         y=y,
-                                         z=z,
-                                         K=K,
-                                         lambda=lambda,
-                                         is.ordered.z=is.ordered.z,
-                                         xeval=xeval,
-                                         zeval=zeval,
-                                         knots=knots,
-                                         basis=basis,
-                                         tau=tau,
-                                         weights=weights)$fitted.values
-
-            zpred.base <- predictKernelSpline(x=x,
-                                              y=y,
-                                              z=z,
-                                              K=K,
-                                              lambda=lambda,
-                                              is.ordered.z=is.ordered.z,
-                                              xeval=xeval.base,
-                                              zeval=zeval.base,
-                                              knots=knots,
-                                              basis=basis,
-                                              tau=tau,
-                                              weights=weights)$fitted.values
-
-            deriv.est <- zpred[,1]-zpred.base[,1]
-            deriv.lwr <- deriv.est - qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
-            deriv.upr <- deriv.est + qnorm(0.975)*sqrt(zpred[,4]^2+zpred.base[,4]^2)
-
-          }
-
-        }
-
-        if(!ci) {
-
-          rg[[i]] <- data.frame(newdata[,i],deriv.est)
-          names(rg[[i]]) <- c(names(newdata)[i],"deriv")
-
-        } else {
-          if (plot.errors.method == "bootstrap" && !is.factor(newdata[,i])) {
-            target.label <- .crs_plot_regression_bootstrap_target_label(
-              object = object,
-              slice.index = i,
-              gradients = TRUE
-            )
-            set_status()
-            boot <- .crs.bootstrap.matrix(object = object,
-                                         newdata = newdata,
-                                         deriv = deriv,
-                                         deriv.index = i,
-                                         boot.num = plot.errors.boot.num,
-                                         display.warnings = display.warnings,
-                                         display.nomad.progress = display.nomad.progress,
-                                         progress.target = target.label)
-            set_status(.crs_plot_bootstrap_stage_label(
-              stage = sprintf("Constructing bootstrap %s bands", plot.errors.type),
-              target_label = target.label
-            ))
-            if (plot.errors.type == "all") {
-              all.bounds <- .crs.bootstrap.bounds(boot$boot.mat, plot.errors.alpha, "all", boot$center)
-              rg[[i]] <- data.frame(newdata[,i], boot$center,
-                                    all.bounds$pointwise[,1], all.bounds$pointwise[,2],
-                                    all.bounds$simultaneous[,1], all.bounds$simultaneous[,2],
-                                    all.bounds$bonferroni[,1], all.bounds$bonferroni[,2])
-              names(rg[[i]]) <- c(names(newdata)[i],"deriv","lwr","upr","lwr.sim","upr.sim","lwr.bonf","upr.bonf")
-            } else {
-              bounds <- .crs.bootstrap.bounds(boot$boot.mat, plot.errors.alpha, plot.errors.type, boot$center)
-              rg[[i]] <- data.frame(newdata[,i], boot$center, bounds)
-              names(rg[[i]]) <- c(names(newdata)[i],"deriv","lwr","upr")
-            }
-          } else {
-            if (plot.errors.method == "bootstrap" && is.factor(newdata[,i]) &&
-                plot.errors.type == "all" && display.warnings) {
-              warning("bootstrap-all for factor derivatives currently reuses standard bounds for this slice")
-            }
-            if (plot.errors.type == "all") {
-              rg[[i]] <- data.frame(newdata[,i], deriv.est,
-                                    deriv.lwr, deriv.upr,
-                                    deriv.lwr, deriv.upr,
-                                    deriv.lwr, deriv.upr)
-              names(rg[[i]]) <- c(names(newdata)[i],"deriv","lwr","upr","lwr.sim","upr.sim","lwr.bonf","upr.bonf")
-            } else {
-              rg[[i]] <- data.frame(newdata[,i], deriv.est, deriv.lwr, deriv.upr)
-              names(rg[[i]]) <- c(names(newdata)[i],"deriv","lwr","upr")
-            }
-          }
-
-        }
-
-        set_status()
-
-      }
-
-    }
-
-    if(deriv > 0) {
-
-      if(common.scale) {
-        min.rg <- Inf
-        max.rg <- -Inf
-        for(i in seq_along(rg)) {
-          if (ci && plot.errors.type == "all") {
-            min.rg <- min(min.rg, min(rg[[i]][,c("lwr","lwr.sim","lwr.bonf")]))
-            max.rg <- max(max.rg, max(rg[[i]][,c("upr","upr.sim","upr.bonf")]))
-          } else {
-            min.rg <- min(min.rg,min(rg[[i]][,-1]))
-            max.rg <- max(max.rg,max(rg[[i]][,-1]))
-          }
-        }
-        ylim <- c(min.rg,max.rg)
-      } else {
-        ylim <- NULL
-      }
-
-      if(plot.behavior!="data") {
-
-        if(!is.null(object$num.z)||(object$num.x>1)) par(mfrow=n2mfrow(NCOL(object$xz)))
-
-        for(i in seq_len(NCOL(object$xz))) {
-
-          if(!ci) {
-            plot(rg[[i]][,1],rg[[i]][,2],
-                 xlab=names(newdata)[i],
-                 ylab=if(!is.factor(newdata[,i])) paste("Order", deriv,"Derivative") else "Difference in Levels",
-                 ylim=ylim,
-                 type="l",
-                 ...)
-
-          } else {
-            if(!common.scale) {
-              if (plot.errors.type == "all") {
-                ylim <- c(min(rg[[i]][,c("lwr","lwr.sim","lwr.bonf")]), max(rg[[i]][,c("upr","upr.sim","upr.bonf")]))
-              } else {
-                ylim <- c(min(rg[[i]][,-1]),max(rg[[i]][,-1]))
-              }
-            }
-            plot(rg[[i]][,1],rg[[i]][,2],
-                 xlab=names(newdata)[i],
-                 ylab=if(!is.factor(newdata[,i])) paste("Order", deriv,"Derivative") else "Difference in Levels",
-                 ylim=ylim,
-                 type="l",
-                 ...)
-            if (plot.errors.type == "all") {
-              all.bounds <- list(
-                pointwise = cbind(rg[[i]][,"lwr"], rg[[i]][,"upr"]),
-                simultaneous = cbind(rg[[i]][,"lwr.sim"], rg[[i]][,"upr.sim"]),
-                bonferroni = cbind(rg[[i]][,"lwr.bonf"], rg[[i]][,"upr.bonf"])
-              )
-              .crs.draw.all(rg[[i]][,1], all.bounds, add.legend = TRUE)
-            } else {
-              ## Need to overlay for proper plotting of factor errorbars
-              par(new=TRUE)
-              plot(rg[[i]][,1],rg[[i]][,3],
-                   xlab="",
-                   ylab="",
-                   ylim=ylim,
-                   type="l",
-                   axes=FALSE,
-                   lty=2,
-                   col=2,
-                   ...)
-              par(new=TRUE)
-              plot(rg[[i]][,1],rg[[i]][,4],
-                   xlab="",
-                   ylab="",
-                   ylim=ylim,
-                   type="l",
-                   axes=FALSE,
-                   lty=2,
-                   col=2,
-                   ...)
-            }
-          }
-
-        }
-
-      }
-
-      if(plot.behavior!="plot") {
-        set_status()
-        par(mfrow=c(1,1))
-        return(rg)
-      }
-
-    }
-
+    invisible(NULL)
   }
 
-  ## Reset par to 1,1 (can be modified above)
+  tryCatch({
+    opened <- rgl::open3d(useNULL = TRUE, silent = TRUE)
+    opened.dev <- as.integer(opened[1L])
+    on.exit(cleanup(), add = TRUE)
 
-  set_status()
+    par3d.call <- .crs_plot_merge_user_args(
+      list(windowRect = c(900, 100, 900 + 640, 100 + 640)),
+      par3d.args
+    )
+    do.call(rgl::par3d, par3d.call)
 
+    view3d.call <- .crs_plot_merge_user_args(
+      list(theta = theta, phi = phi, fov = 80),
+      view3d.args
+    )
+    do.call(rgl::view3d, view3d.call)
+
+    persp3d.call <- .crs_plot_merge_user_args(
+      list(x = x, y = y, z = z,
+           zlim = zlim,
+           xlab = xlab, ylab = ylab, zlab = zlab,
+           ticktype = "detailed",
+           border = border,
+           color = .crs_plot_rgl_surface_colors(z = z, col = col),
+           alpha = 0.6,
+           back = "lines",
+           main = main),
+      persp3d.args
+    )
+    do.call(rgl::persp3d, persp3d.call)
+
+    grid.side <- c("x", "y+", "z")
+    if (!is.null(grid3d.args$side)) {
+      grid.side <- grid3d.args$side
+      grid3d.args$side <- NULL
+    }
+    do.call(rgl::grid3d, c(list(grid.side), grid3d.args))
+
+    if (!is.null(draw.extras)) {
+      draw.extras()
+    }
+
+    if (isTRUE(data_overlay) && !is.null(overlay_x1) &&
+        !is.null(overlay_x2) && !is.null(overlay_y)) {
+      ok <- is.finite(overlay_x1) & is.finite(overlay_x2) &
+        is.finite(overlay_y)
+      if (any(ok)) {
+        rgl::points3d(overlay_x1[ok], overlay_x2[ok], overlay_y[ok],
+                      color = .crs_plot_color("data_overlay", alpha = 1),
+                      alpha = 0.35, size = 2)
+      }
+    }
+
+    if (isTRUE(data_rug) && !is.null(overlay_x1) && !is.null(overlay_x2) &&
+        !is.null(zlim)) {
+      .crs_plot_draw_floor_rug_rgl(overlay_x1, overlay_x2, zlim)
+    }
+
+    widget <- rgl::rglwidget(x = rgl::scene3d())
+    if (length(widget.args))
+      widget <- do.call(rgl::rglwidget, c(list(x = rgl::scene3d()),
+                                         widget.args))
+    print(widget)
+    invisible(widget)
+  }, error = function(e) {
+    stop(sprintf("rgl surface renderer failed (%s)", conditionMessage(e)),
+         call. = FALSE)
+  })
+}
+
+plot.crs <- function(x, ...) {
+  .crs_plot_regression_1d_public(
+    object = x,
+    plot.call = match.call(expand.dots = FALSE),
+    ...
+  )
 }
 
 crs.sigtest <- function(object,...) {
